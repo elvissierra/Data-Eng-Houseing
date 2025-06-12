@@ -20,9 +20,10 @@ OPERATIONS = {
     "Correlation: S-W": ("", ""), # Correlation between Columns S and W
     "Correlation: T-X": ("", ""), # Correlation between Columns T and X
     #"": ("", ""),
-}"""
+}
+"""
 
-INPUT_CSV = "ICFI.csv"
+INPUT_CSV     = "ICFI.csv"
 REPORTING_CSV = "Report_Ticket.csv"
 
 TICKET_TYPES = [
@@ -56,8 +57,8 @@ COL_OTHER    = "Other markings made along with procedural marking?"
 COL_ISSUES   = "Are customer issues resolved?"
 COL_ATTR_ERR = "Any attribute errors remain on the POI?"
 COL_DISCREP  = "Are there still discrepancies between research indicators and POI data?"
-COL_CUS1 = "All customer-suggested fields edited?"
-COL_CUS2 = "All customer-suggested fields have a corresponding dependent edit?"
+COL_CUS1     = "All customer-suggested fields edited?"
+COL_CUS2     = "All customer-suggested fields have a corresponding dependent edit?"
 
 df    = pd.read_csv(INPUT_CSV)
 total = len(df)
@@ -161,9 +162,9 @@ with open(REPORTING_CSV, "w", newline="") as f:
         c5 = (df[COL_CUS2] == v).sum();     p5 = f"{c5/total*100:.2f}%"
 
         w.writerow([
-            v, c1, p1,    # Q1
-            v, c2, p2,    # Q2
-            v, c3, p3,    # Q3
+            v, c1, p1,
+            v, c2, p2,
+            v, c3, p3,
             v, c4, p4,
             v, c5, p5 
         ])
