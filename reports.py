@@ -1,26 +1,29 @@
+import glob
+import os
 import pandas as pd
 import csv
 
 """
-OPERATIONS = {
-    # column_name:      row_name
-    "Ticket Type": ("sum", "Ticket Type"), # ticket type [e.g. "New", "Update", "Delete"]
-    "Last Editor Resolution": ("Complete", "Rejected"), # num of complete/ rejected
-    "L1 Resolution": ("sum", "L1 Resolution"), # num of approved/ rejected
-    "L2 Resolution": ("sum", "L1 Resolution"), # num of approved/ rejected
-    "Suggested Fields": ("sum", "Suggested Fields"), # num per suggested field seen
-    "Edited Fields": (), # per suggested field seen how many of each were edited
-    "Other procedural markings?": (), # per suggested field seen how many of each have an 'other markings made along with procedural marking?'
-    "All  customer suggested fields?": ("", ""), # how many are Yes, No, or NA
-    "All customer suggested fields have a corresponding dependent edit?": ("", ""), # how many are Yes, No, or NA
-    "Are customer issues resolved?": ("", ""), # how many are Yes, No, or NA
-    "Any attribute errors remain on POI?": ("", ""), # how many are Yes, No, or NA
-    "Are there still discrepancies between research indicators and POI data?": ("", ""), # how many are Yes, No, or NA
-    "Correlation: P-W": ("", ""), # Correlation between Columns P and W
-    "Correlation: S-W": ("", ""), # Correlation between Columns S and W
-    "Correlation: T-X": ("", ""), # Correlation between Columns T and X
-    #"": ("", ""),
-}"""
+    OPERATIONS = {
+        # column_name:      row_name
+        "Ticket Type": ("sum", "Ticket Type"), # ticket type [e.g. "New", "Update", "Delete"]
+        "Last Editor Resolution": ("Complete", "Rejected"), # num of complete/ rejected
+        "L1 Resolution": ("sum", "L1 Resolution"), # num of approved/ rejected
+        "L2 Resolution": ("sum", "L1 Resolution"), # num of approved/ rejected
+        "Suggested Fields": ("sum", "Suggested Fields"), # num per suggested field seen
+        "Edited Fields": (), # per suggested field seen how many of each were edited
+        "Other procedural markings?": (), # per suggested field seen how many of each have an 'other markings made along with procedural marking?'
+        "All  customer suggested fields?": ("", ""), # how many are Yes, No, or NA
+        "All customer suggested fields have a corresponding dependent edit?": ("", ""), # how many are Yes, No, or NA
+        "Are customer issues resolved?": ("", ""), # how many are Yes, No, or NA
+        "Any attribute errors remain on POI?": ("", ""), # how many are Yes, No, or NA
+        "Are there still discrepancies between research indicators and POI data?": ("", ""), # how many are Yes, No, or NA
+        "Correlation: P-W": ("", ""), # Correlation between Columns P and W
+        "Correlation: S-W": ("", ""), # Correlation between Columns S and W
+        "Correlation: T-X": ("", ""), # Correlation between Columns T and X
+        #"": ("", ""),
+    }
+"""
 
 INPUT_CSV = "ICFI.csv"
 REPORTING_CSV = "Report_Ticket.csv"
@@ -29,6 +32,8 @@ TICKET_TYPES = [
     "POI Datascience", "POI Change Details",
     "POI Remove",      "POI Add",
 ]
+
+possible_fields = ["Closures", "Name", "URL", "Address", "Geocode", "Phone", "All-Year-Round Hours", "Modern Category", "Category"]
 
 LE_RES = ["Complete", "Reject"]
 L1_RES = ["Approved", "Rejected"]
@@ -59,9 +64,106 @@ COL_DISCREP  = "Are there still discrepancies between research indicators and PO
 COL_CUS1 = "All customer-suggested fields edited?"
 COL_CUS2 = "All customer-suggested fields have a corresponding dependent edit?"
 
-df    = pd.read_csv(INPUT_CSV)
-total = len(df)
 
+single_letters = [chr(i) for i in range(ord('A'), ord('Z') + 1)]
+double_letters = [f"{a}{b}" for a in single_letters for b in single_letters]
+all_possible_cols = single_letters + double_letters
+
+
+def expand_col_range(start, end):
+    """ Expands a column range like 'AB-AI' to ['AB', 'AC', 'AD', ... 'AI']. """
+    start_index = all_possible_cols.index(start)
+    end_index = all_possible_cols.index(end)
+    return all_possible_cols[start_index:end_index + 1]
+# Preprocess the 'col' list and convert ranges
+def preprocess_cols(col_list):
+    expanded_cols = []
+    for col in col_list:
+        # Split by ',' first to handle multiple columns
+        col_parts = col.split(',')
+        for col_part in col_parts:
+            col_part = col_part.strip().upper()
+            if '-' in col_part:  # Handle ranges like "AB-AI"
+                start_col, end_col = col_part.split('-')
+                expanded_cols.extend(expand_col_range(start_col.strip(), end_col.strip()))
+            else:
+                expanded_cols.append(col_part.strip())
+    return expanded_cols
+
+def find_latest_report(directory='.'):
+    csv_file = glob.glob(os.path.join(directory, "*.csv"))
+    if not csv_file:
+        return None
+    latest_file = max(csv_file, key=os.path.getmtime)
+    return latest_file
+
+def load_config(csv_path: str):
+    """
+    Reads the config-format CSV and returns a dict with:
+      - project_name, project_tab, quip_link
+      - warnings_col, start_row
+      - last_ran_date, last_avg_ticket_runtime, last_total_runtime
+      - ids_type, last_id_row
+    """
+    df = pd.read_csv(csv_path, header=None, dtype=str).fillna('')
+    
+    # top-rows are single-value metadata
+    project_name            = df.iat[0,1].strip() or None
+    project_tab             = df.iat[1,1].strip() or None
+    quip_link_raw           = df.iat[2,1].strip()
+    quip_link               = f"https://quip-apple.com/{quip_link_raw}" if quip_link_raw else None
+    warnings_col            = df.iat[3,1].strip().upper() or None
+    start_row_txt           = df.iat[4,1].strip()
+    start_row               = int(start_row_txt) if start_row_txt.isdigit() else None
+    last_ran_date           = df.iat[5,1].strip() or None
+    
+    # numeric runtimes
+    try:
+        last_avg_ticket_runtime = float(df.iat[6,1])
+    except ValueError:
+        last_avg_ticket_runtime = None
+    last_total_runtime       = df.iat[7,1].strip() or None
+
+    # determine last non-blank ID row by dropping blank on col W (index 22)
+    body = df.iloc[2:].reset_index(drop=True)
+    body = body[body.iloc[:,22].astype(bool)]
+    if not body.empty:
+        last_idx_zero_based = body.index[-1]
+        last_id_row = last_idx_zero_based + 4  # offset back to original CSV row
+    else:
+        last_id_row = None
+
+    # ID type is in row 10 (i=9), col W (index 22)
+    ids_type = df.iat[9,22].strip() or None
+
+    return {
+        "project_name": project_name,
+        "project_tab": project_tab,
+        "quip_link": quip_link,
+        "warnings_col": warnings_col,
+        "start_row": start_row,
+        "last_ran_date": last_ran_date,
+        "last_avg_ticket_runtime": last_avg_ticket_runtime,
+        "last_total_runtime": last_total_runtime,
+        "ids_type": ids_type,
+        "last_id_row": last_id_row,
+    }
+
+
+if __name__ == "__main__":
+    reporting_file = find_latest_report()
+    if reporting_file is None:
+        print("No reporting file found, process ended.")
+        exit(1)
+
+    df = pd.read_csv(reporting_file)
+    print(f"Found latest report file to process at: {reporting_file}")
+
+    total = len(df)
+    print(f"total dataframe: {total}")
+
+
+"""
 # Counts & Percentages
 def counts_and_pcts(col, items):
     cnts = [(df[col] == it).sum() for it in items]
@@ -169,3 +271,4 @@ with open(REPORTING_CSV, "w", newline="") as f:
         ])
 
 print(f"✅  Written {REPORTING_CSV!r}")
+"""
