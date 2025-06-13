@@ -22,6 +22,14 @@ import csv
         "Correlation: S-W": ("", ""), # Correlation between Columns S and W
         "Correlation: T-X": ("", ""), # Correlation between Columns T and X
         #"": ("", ""),
+        WORKFLOW
+        How would the data be determined?
+            - The reports_config.csv needs to be read to determine what fields are needed from the analysis.csv
+            - After being read the designated fields will be scraped from the analysis.csv
+                - Calculations will be determined by config_report.csv format(determine how to do this)
+            - Once the calculations(fields that need to be +,-,correlations) performed
+            - Write into a new Reports.csv file
+
     }
 """
 
@@ -97,9 +105,9 @@ def find_latest_report(directory='.'):
     latest_file = max(csv_file, key=os.path.getmtime)
     return latest_file
 
-def load_config(csv_path: str):
+def load_report(csv_path: str):
     """
-    Reads the config-format CSV and returns a dict with:
+    Reads the report-format CSV and returns a dict with:
       - project_name, project_tab, quip_link
       - warnings_col, start_row
       - last_ran_date, last_avg_ticket_runtime, last_total_runtime
