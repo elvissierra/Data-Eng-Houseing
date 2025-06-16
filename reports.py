@@ -83,15 +83,15 @@ def expand_col_range(start, end):
     start_index = all_possible_cols.index(start)
     end_index = all_possible_cols.index(end)
     return all_possible_cols[start_index:end_index + 1]
-# Preprocess the 'col' list and convert ranges
+
 def preprocess_cols(col_list):
     expanded_cols = []
     for col in col_list:
-        # Split by ',' first to handle multiple columns
+
         col_parts = col.split(',')
         for col_part in col_parts:
             col_part = col_part.strip().upper()
-            if '-' in col_part:  # Handle ranges like "AB-AI"
+            if '-' in col_part:
                 start_col, end_col = col_part.split('-')
                 expanded_cols.extend(expand_col_range(start_col.strip(), end_col.strip()))
             else:
@@ -106,13 +106,6 @@ def find_latest_report(directory='.'):
     return latest_file
 
 def load_report(csv_path: str):
-    """
-    Reads the report-format CSV and returns a dict with:
-      - project_name, project_tab, quip_link
-      - warnings_col, start_row
-      - last_ran_date, last_avg_ticket_runtime, last_total_runtime
-      - ids_type, last_id_row
-    """
     df = pd.read_csv(csv_path, header=None, dtype=str).fillna('')
     
     # top-rows are single-value metadata
