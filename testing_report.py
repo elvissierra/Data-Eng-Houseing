@@ -1,112 +1,67 @@
-#!/usr/bin/env python3
-import argparse
-import json
-from typing import Dict, List, Callable
-import glob
-import sys
-import os
 import pandas as pd
+import glob
+import os
 
 
-def normalize_headers(df: pd.DataFrame):
-    """Make headers safe for programmatic access."""
-    df = df.copy()
-    df.columns = (
-        df.columns.str.strip()
-        .str.lower()
-        .str.replace(r"[^\w]+", "_", regex=True)
-        .str.strip("_")
-    )
-    return df
-
-
-def latest_csv(directory="."):
-    """Returns the latest report csv file in the current directory."""
-    csv_file = glob.glob(os.path.join(directory), "*.csv")
+def find_latest_report(directory='.'):
+    csv_file = glob.glob(os.path.join(directory, "*.csv"))
     if not csv_file:
         return None
-    latest_file = max(csv_file, key=os.path.getctime)
+    latest_file = max(csv_file, key=os.path.getmtime)
     return latest_file
 
+def load_config_file(config_path):
+    """ Loads the config file to analyze fields to generate. """
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Config file not found, ready the config for report.")
+    config_df = pd.read_csv(config_path)
+    return config_df
 
-def load_report(latest_file, normalize: bool = True, **kwargs):
-    """Read CSV into DataFrame, optionally normalizing headers."""
-    df = pd.read_csv(latest_file, **kwargs)
-    return normalize_headers(df) if normalize else df
+def generate_analytics_report(report_df, config_df, output_path="analytics_report.csv"):
+    selected_columns = config_df["column"].tolist()
+    valid_columns = [col for col in selected_columns if col in report_df.columns]
 
+    if not valid_columns:
+        raise ValueError("Issue verifying headers in config.")
 
-def select_and_rename(
-    df: pd.DataFrame, want: List[str], rename_map: Dict[str, str] = None
-):
-    """Keep only `want` columns (if they exist), and rename per `rename_map`."""
-    present = [col for col in want if col in df.columns]
-    out = df[present].copy()
-    if rename_map:
-        out = out.rename(columns=rename_map)
-    return out
+    selected_df = report_df[valid_columns]
 
+    analytics = []
 
-def apply_calculations(df: pd.DataFrame, calcs: Dict[str, str]):
-    """
-    Given a dict of new_col_name -> pandas-eval-able expression in terms of df,
-    e.g. { "full_name": "first_name + ' ' + last_name", "age_days": "age * 365" }
-    """
-    df = df.copy()
-    for new_col, expr in calcs.items():
-        df[new_col] = df.eval(expr)
-    return df
+    for col in valid_columns:
+        field1_count = 0
+        field2_count = 0
+        neither_count = 0
+        for val in selected_df[col].dropna():
+            fields = [x.strip().lower() for x in str(val).split('|')]
+            has_field1 = 'field1' in fields
+            has_field2 = 'field2' in fields
+            if has_field1:
+                field1_count += 1
+            if has_field2:
+                field2_count += 1
+            if not has_field1 and not has_field2:
+                neither_count += 1
+        analytics.append({
+            "column": col,
+            "field1_count": field1_count,
+            "field2_count": field2_count,
+            "neither_count": neither_count
+        })
 
-
-def save_csv(df: pd.DataFrame, path: str, **kwargs):
-    df.to_csv(path, index=False, **kwargs)
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Generic CSV → filtered, calculated report.csv"
-    )
-    parser.add_argument("input_csv", help="Path to source CSV")
-    parser.add_argument("output_csv", help="Where to write your report")
-    parser.add_argument(
-        "--keep-cols",
-        nargs="+",
-        default=[],
-        help="List of normalized column names to retain",
-    )
-    parser.add_argument(
-        "--rename-map",
-        type=json.loads,
-        default={},
-        help=(
-            "JSON map raw_name:desired_name, e.g. "
-            '\'{"ticket_id":"Ticket ID","url":"POI URL"}\''
-        ),
-    )
-    parser.add_argument(
-        "--calcs",
-        type=json.loads,
-        default={},
-        help=(
-            "JSON map new_col:pandas_expr, e.g. "
-            '\'{"missing_hours":"operating_hours.isna()"}\''
-        ),
-    )
-    args = parser.parse_args()
-
-    # 1) load + normalize
-    df = load_report(args.input_csv)
-
-    # 2) pick & rename
-    df = select_and_rename(df, args.keep_cols, args.rename_map)
-
-    # 3) custom calcs
-    if args.calcs:
-        df = apply_calculations(df, args.calcs)
-
-    # 4) write out
-    save_csv(df, args.output_csv)
-    print(f"Report written to {args.output_csv}")
-
+    analytics_df = pd.DataFrame(analytics)
+    analytics_df.to_csv(output_path, index=False)
+    print(f"Report generated: {output_path}")
+    return analytics_df
 
 if __name__ == "__main__":
-    main()
+    latest_report = find_latest_report()
+    if not latest_report:
+        raise FileNotFoundError("No report file found in the current directory.")
+    print(f"Latest report: {latest_report}")
+    config_path = "report_config.csv"
+    config_df = load_config_file(config_path)
+    report_df = pd.read_csv(latest_report)
+
+    df_result = generate_analytics_report(report_df, config_df)
+    print(df_result)
