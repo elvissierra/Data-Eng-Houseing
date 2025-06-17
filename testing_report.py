@@ -34,12 +34,12 @@ def generate_analytics_report(report_df, config_df, output_path="analytics_repor
         # blank count cases
         blank_count = report_df[col].isna().sum() + (report_df[col].astype(str).str.strip() == '').sum()
         # add calculations
-        calc_percentage = (match_count / (len(report_df) - blank_count)) * 100 if len(report_df) - blank_count > 0 else 0
+        calc_percentage = (match_count / (len(report_df) - blank_count)) * 100
 
         report_data[col] = {
             "match_count": match_count,
             "blank_count": blank_count,
-            "percentage": calc_percentage,
+            "percentage": (str(round(calc_percentage)) + "%"),
             #"": 
         }
 
