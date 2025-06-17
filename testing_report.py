@@ -3,7 +3,7 @@ import os
 import glob
 
 def find_latest_report(directory='.'):
-    excluded_file = {"report_config.csv"}
+    excluded_file = {"report_config.csv", "analytics_report.csv"}
     csv_file = glob.glob(os.path.join(directory, "*.csv"))
     csv_file = [f for f in csv_file if os.path.basename(f) not in excluded_file]
     if not csv_file:
@@ -26,7 +26,7 @@ def generate_analytics_report(report_df, config_df, output_path="analytics_repor
         if col not in report_df.columns:
             print(f"⚠️ Warning: Column '{col}' not found in report. Skipping.")
             continue
-        # Fetch headers
+        # Fetch and normalize headers
         target_value = str(config_df.iloc[0][col]).strip().lower()
         col_series = report_df[col].dropna().astype(str).str.lower().str.strip()
         # match count cases
@@ -34,10 +34,13 @@ def generate_analytics_report(report_df, config_df, output_path="analytics_repor
         # blank count cases
         blank_count = report_df[col].isna().sum() + (report_df[col].astype(str).str.strip() == '').sum()
         # add calculations
+        calc_percentage = (match_count / (len(report_df) - blank_count)) * 100 if len(report_df) - blank_count > 0 else 0
 
         report_data[col] = {
             "match_count": match_count,
-            "blank_count": blank_count
+            "blank_count": blank_count,
+            "percentage": calc_percentage,
+            #"": 
         }
 
     analytics_df = pd.DataFrame(report_data).T
