@@ -2,9 +2,10 @@ import pandas as pd
 import csv
 import os
 import glob
+import re
 
 def find_latest_report(directory='.'):
-    excluded_file = {"report_config.csv", "analytics_report.csv"}
+    excluded_file = {"modular_report_config.csv", "analytics_report.csv", "testing_report_config.csv", "Report_Ticket.csv"}
     csv_files = glob.glob(os.path.join(directory, "*.csv"))
     csv_files = [f for f in csv_files if os.path.basename(f) not in excluded_file]
     return max(csv_files, key=os.path.getmtime) if csv_files else None
@@ -32,30 +33,48 @@ def generate_dynamic_report(report_df, config_df, output_path="analytics_report.
     report_df = normalize_columns(report_df)
     config_df = config_df.copy()
     config_df.columns = config_df.columns.str.strip().str.lower()
+    config_df["aggregate"] = (config_df).get("aggregate", "").str.strip().str.lower().isin(['yes', 'true', '1'])
+    config_df["root_only"] = (config_df).get("root_only", "").str.strip().str.lower().isin(['yes', 'true', '1'])
+    config_df["delimiter"] = (config_df).get("delimiter", ".")
 
     groups = config_df['group'].unique()
 
     for group in groups:
         group_df = config_df[config_df['group'] == group]
         section = [[f"{group}", "%", "Count"]]  # header row
-        
+
         for _, row in group_df.iterrows():
             col = row['column'].strip().lower()
-            target_value = str(row['value']).strip().lower()
-            label = row['label'] if 'label' in row and pd.notna(row['label']) else target_value
+            is_aggregate = row["aggregate"]
+            target_value = str(row.get("value", "")).strip().lower()
+            label = row.get('label') or target_value or col
+            is_root = row["root_only"]
+            delimiter = row["delimiter"]
+
 
             if col not in report_df.columns:
                 print(f"⚠️ Warning: '{col}' not found in report. Skipping.")
                 continue
-
-            matched = report_df[col].dropna().astype(str).str.lower().str.strip().apply(
-                lambda x: target_value in [i.strip() for i in x.split('|')]
-            )
-
-            match_count = matched.sum()
-            percent = round((match_count / total_rows) * 100, 2)
-
-            section.append([label, f"{percent:.2f}%", match_count])
+            series = report_df[col].fillna("").astype(str)
+            if is_root:
+                series = series.str.split(re.escape(delimiter)).str[0]
+            if is_aggregate:
+                unique_values = series.str.strip().str.lower().unique()
+                for val in sorted(unique_values):
+                    mask = series.str.strip().str.lower().eq(val)
+                    match_count = int(mask.sum())
+                    percent = round((match_count / total_rows) * 100, 2)
+                    section.append([val, f"{percent:.2f}%", match_count])
+            else:
+                if is_root:
+                    target_value = target_value.split(delimiter)[0]
+                pattern = fr"(?:^|\|)\s*{re.escape(target_value)}\s*(?:\||$)"
+                matched = (
+                    series.str.lower().str.contains(pattern)
+                )
+                match_count = int(matched.sum())
+                percent = round(match_count / total_rows * 100, 2)
+                section.append([label, f"{percent:.2f}%", match_count])
 
         section_blocks.append(section)
 
@@ -69,7 +88,7 @@ if __name__ == "__main__":
         raise FileNotFoundError("No valid report CSV found.")
     print(f"📄 Using latest report: {latest_report}")
 
-    config_path = "report_config.csv"
+    config_path = "modular_report_config.csv"
     config_df = load_config_file(config_path)
     report_df = pd.read_csv(latest_report)
 
