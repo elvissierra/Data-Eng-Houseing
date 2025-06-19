@@ -15,7 +15,7 @@ EX. Cat Root Node,ModernCat-Name,              ,   yes    ,   yes    ,    .     
 """
 
 def find_latest_report(directory='.'):
-    excluded_file = {"modular_report_config.csv", "Analytics_Report.csv", "testing_report_config.csv", "Report_Ticket.csv"}
+    excluded_file = {"testing_report_config.csv","modular_report_config.csv", "Analytics_Report.csv", "testing_report_config.csv", "Report_Ticket.csv"}
     csv_files = glob.glob(os.path.join(directory, "*.csv"))
     csv_files = [f for f in csv_files if os.path.basename(f) not in excluded_file]
     return max(csv_files, key=os.path.getmtime) if csv_files else None

@@ -1,6 +1,5 @@
 .reports
 __pycache__
 .ruff_cache
-*.csv
 .DS_Store
 *.log

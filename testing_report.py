@@ -1,63 +1,105 @@
 import pandas as pd
+import csv
 import os
 import glob
+import re
+
+""" Report Aggregate- in the following long format
+
+    GROUP        ,   COLUMN     ,     VALUE    , AGGREGATE, ROOT_ONLY, DELIMITER , LABEL
+    Group name   , Col Header   ,  Row Value   ,   yes/no ,   yes/no ,    .      ,
+EX. Cat Root Node,ModernCat-Name,              ,   yes    ,   yes    ,    .      , Does Nothing?
+    Cat Head Node,ModernCat-Path,beauty_and_spa,   no     ,   yes    ,    .      ,
+    Country Code , Country Code ,    us        ,          ,          ,           ,
+    
+"""
 
 def find_latest_report(directory='.'):
-    excluded_file = {"report_config.csv", "analytics_report.csv"}
-    csv_file = glob.glob(os.path.join(directory, "*.csv"))
-    csv_file = [f for f in csv_file if os.path.basename(f) not in excluded_file]
-    if not csv_file:
-        return None
-    latest_file = max(csv_file, key=os.path.getmtime)
-    return latest_file
+    excluded_file = {"modular_report_config.csv","testing_report_config.csv", "Analytics_Report.csv", "testing_report_config.csv", "Report_Ticket.csv"}
+    csv_files = glob.glob(os.path.join(directory, "*.csv"))
+    csv_files = [f for f in csv_files if os.path.basename(f) not in excluded_file]
+    return max(csv_files, key=os.path.getmtime) if csv_files else None
 
 def load_config_file(config_path):
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Config file not found: {config_path}")
     return pd.read_csv(config_path)
 
-def generate_analytics_report(report_df, config_df, output_path="analytics_report.csv"):
-    report_df.columns = report_df.columns.str.strip().str.lower()
+def normalize_columns(df):
+    df.columns = df.columns.str.strip().str.lower()
+    return df
+
+def write_custom_report(output_path, section_data):
+    with open(output_path, 'w', newline='') as f:
+        writer = csv.writer(f)
+        for section in section_data:
+            writer.writerows(section)
+            writer.writerow([])
+
+def generate_dynamic_report(report_df, config_df, output_path="Analytics_Report.csv"):
+    total_rows = len(report_df)
+    section_blocks = []
+
+    report_df = normalize_columns(report_df)
+    config_df = config_df.copy()
     config_df.columns = config_df.columns.str.strip().str.lower()
+    config_df["aggregate"] = (config_df).get("aggregate", "").str.strip().str.lower().isin(['yes', 'true', '1'])
+    config_df["root_only"] = (config_df).get("root_only", "").str.strip().str.lower().isin(['yes', 'true', '1'])
+    config_df["delimiter"] = (config_df).get("delimiter", ".")
 
-    report_data = {}
+    groups = config_df['group'].unique()
 
-    for col in config_df.columns:
-        if col not in report_df.columns:
-            print(f"⚠️ Warning: Column '{col}' not found in report. Skipping.")
-            continue
-        # Fetch and normalize headers
-        target_value = str(config_df.iloc[0][col]).strip().lower()
-        col_series = report_df[col].dropna().astype(str).str.lower().str.strip()
-        # match count cases
-        match_count = col_series.apply(lambda x: target_value in [i.strip() for i in x.split('|')]).sum()
-        # blank count cases
-        blank_count = report_df[col].isna().sum() + (report_df[col].astype(str).str.strip() == '').sum()
-        # add calculations
-        calc_percentage = (match_count / (len(report_df) - blank_count)) * 100
+    for group in groups:
+        group_df = config_df[config_df['group'] == group]
+        section = [[f"{group}", "%", "Count"]]  # header row
 
-        report_data[col] = {
-            "match_count": match_count,
-            "blank_count": blank_count,
-            "percentage": (str(round(calc_percentage)) + "%"),
-            #"": 
-        }
+        for _, row in group_df.iterrows():
+            col = row['column'].strip().lower()
+            is_aggregate = row["aggregate"]
+            target_value = str(row.get("value", "")).strip().lower()
+            label = target_value or row.get('label')
+            is_root = row["root_only"]
+            delimiter = row["delimiter"]
 
-    analytics_df = pd.DataFrame(report_data).T
-    analytics_df = analytics_df.T
-    analytics_df.to_csv(output_path)
+
+            if col not in report_df.columns:
+                print(f"⚠️ Warning: '{col}' not found in report. Skipping.")
+                continue
+            series = report_df[col].fillna("").astype(str)
+            if is_root:
+                series = series.str.split(re.escape(delimiter)).str[0]
+            if is_aggregate:
+                unique_values = series.str.strip().str.lower().unique()
+                for val in sorted(unique_values):
+                    mask = series.str.strip().str.lower().eq(val)
+                    match_count = int(mask.sum())
+                    percent = round((match_count / total_rows) * 100, 2)
+                    section.append([val, f"{percent:.2f}%", match_count])
+            else:
+                if is_root:
+                    target_value = target_value.split(delimiter)[0]
+                pattern = fr"(?:^|\|)\s*{re.escape(target_value)}\s*(?:\||$)"
+                matched = (
+                    series.str.lower().str.contains(pattern)
+                )
+                match_count = int(matched.sum())
+                percent = round(match_count / total_rows * 100, 2)
+                section.append([label, f"{percent:.2f}%", match_count])
+
+        section_blocks.append(section)
+
+    write_custom_report(output_path, section_blocks)
     print(f"✅ Report generated: {output_path}")
-    return analytics_df
+
 
 if __name__ == "__main__":
     latest_report = find_latest_report()
     if not latest_report:
-        raise FileNotFoundError("No report file found.")
+        raise FileNotFoundError("No valid report CSV found.")
     print(f"📄 Using latest report: {latest_report}")
 
-    config_path = "report_config.csv"
+    config_path = "testing_report_config.csv"
     config_df = load_config_file(config_path)
     report_df = pd.read_csv(latest_report)
 
-    df_result = generate_analytics_report(report_df, config_df)
-    print(df_result)
+    generate_dynamic_report(report_df, config_df)

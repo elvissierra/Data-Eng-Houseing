@@ -1,0 +1,8 @@
+GROUP,COLUMN,VALUE,AGGREGATE,ROOT_ONLY,DELIMITER,LABEL
+Country Code,country code,us,,,,
+Cat Head Node,Corrections col - Modern Category - Name,beauty salon,no,yes,.,
+Cat Head Node,Corrections col - Modern Category - Name,toy store,no,yes,.,
+Cat Root Node,Corrections col - Modern Category - Path,beauty_and_spa,no,yes,.,
+Cat Root Node,Corrections col - Modern Category - Path,shopping,no,yes,.,
+Suggested- Geocode/Category/Name,"Name, Geocode and Category Suggested?",,yes,,,
+If not OW does it exist?,"If no, Does OW exist?",,yes,,,
