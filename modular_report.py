@@ -4,6 +4,16 @@ import os
 import glob
 import re
 
+""" Report Aggregate- in the following long format
+
+    GROUP        ,   COLUMN     ,     VALUE    , AGGREGATE, ROOT_ONLY, DELIMITER , LABEL
+    Group name   , Col Header   ,  Row Value   ,   yes/no ,   yes/no ,    .      ,
+EX. Cat Root Node,ModernCat-Name,              ,   yes    ,   yes    ,    .      , Does Nothing?
+    Cat Head Node,ModernCat-Path,beauty_and_spa,   no     ,   yes    ,    .      ,
+    Country Code , Country Code ,    us        ,          ,          ,           ,
+    
+"""
+
 def find_latest_report(directory='.'):
     excluded_file = {"modular_report_config.csv", "analytics_report.csv", "testing_report_config.csv", "Report_Ticket.csv"}
     csv_files = glob.glob(os.path.join(directory, "*.csv"))
@@ -47,7 +57,7 @@ def generate_dynamic_report(report_df, config_df, output_path="analytics_report.
             col = row['column'].strip().lower()
             is_aggregate = row["aggregate"]
             target_value = str(row.get("value", "")).strip().lower()
-            label = row.get('label') or target_value or col
+            label = target_value or row.get('label')
             is_root = row["root_only"]
             delimiter = row["delimiter"]
 
