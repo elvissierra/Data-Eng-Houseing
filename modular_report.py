@@ -15,7 +15,7 @@ EX. Cat Root Node,ModernCat-Name,              ,   yes    ,   yes    ,    .     
 """
 
 def find_latest_report(directory='.'):
-    excluded_file = {"modular_report_config.csv", "analytics_report.csv", "testing_report_config.csv", "Report_Ticket.csv"}
+    excluded_file = {"modular_report_config.csv", "Analytics_Report.csv", "testing_report_config.csv", "Report_Ticket.csv"}
     csv_files = glob.glob(os.path.join(directory, "*.csv"))
     csv_files = [f for f in csv_files if os.path.basename(f) not in excluded_file]
     return max(csv_files, key=os.path.getmtime) if csv_files else None
@@ -36,7 +36,7 @@ def write_custom_report(output_path, section_data):
             writer.writerows(section)
             writer.writerow([])
 
-def generate_dynamic_report(report_df, config_df, output_path="analytics_report.csv"):
+def generate_dynamic_report(report_df, config_df, output_path="Analytics_Report.csv"):
     total_rows = len(report_df)
     section_blocks = []
 
