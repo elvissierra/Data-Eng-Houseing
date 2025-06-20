@@ -15,7 +15,7 @@ EX. Cat Root Node,ModernCat-Name,              ,   yes    ,   yes    ,    .     
 """
 
 def find_latest_report(directory='.'):
-    excluded_file = {"modular_report_config.csv","testing_report_config.csv", "Analytics_Report.csv", "testing_report_config.csv", "Report_Ticket.csv"}
+    excluded_file = {"report_config.csv", "Analytics_Report.csv"}
     csv_files = glob.glob(os.path.join(directory, "*.csv"))
     csv_files = [f for f in csv_files if os.path.basename(f) not in excluded_file]
     return max(csv_files, key=os.path.getmtime) if csv_files else None
@@ -51,7 +51,7 @@ def generate_dynamic_report(report_df, config_df, output_path="Analytics_Report.
 
     for group in groups:
         group_df = config_df[config_df['group'] == group]
-        section = [[f"{group}", "%", "Count"]]  # header row
+        section = [[f"{group}", "%", "Count"]]
 
         for _, row in group_df.iterrows():
             col = row['column'].strip().lower()
@@ -71,8 +71,8 @@ def generate_dynamic_report(report_df, config_df, output_path="Analytics_Report.
             if is_aggregate:
                 unique_values = series.str.strip().str.lower().unique()
                 for val in sorted(unique_values):
-                    mask = series.str.strip().str.lower().eq(val)
-                    match_count = int(mask.sum())
+                    match = series.str.strip().str.lower().eq(val)
+                    match_count = int(match.sum())
                     percent = round((match_count / total_rows) * 100, 2)
                     section.append([val, f"{percent:.2f}%", match_count])
             else:
@@ -98,7 +98,7 @@ if __name__ == "__main__":
         raise FileNotFoundError("No valid report CSV found.")
     print(f"📄 Using latest report: {latest_report}")
 
-    config_path = "testing_report_config.csv"
+    config_path = "report_config.csv"
     config_df = load_config_file(config_path)
     report_df = pd.read_csv(latest_report)
 
