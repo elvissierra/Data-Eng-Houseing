@@ -8,14 +8,14 @@ import re
 
     GROUP        ,   COLUMN     ,     VALUE    , AGGREGATE, ROOT_ONLY, DELIMITER , LABEL
     Group name   , Col Header   ,  Row Value   ,   yes/no ,   yes/no ,    .      ,
-EX. Cat Root Node,ModernCat-Name,              ,   yes    ,   yes    ,    .      , Does Nothing?
+EX. Cat Root Node,ModernCat-Name,              ,   yes    ,   yes    ,    .      ,
     Cat Head Node,ModernCat-Path,beauty_and_spa,   no     ,   yes    ,    .      ,
     Country Code , Country Code ,    us        ,          ,          ,           ,
     
 """
 
 def find_latest_report(directory='.'):
-    excluded_file = {"testing_report_config.csv","modular_report_config.csv", "Analytics_Report.csv", "testing_report_config.csv", "Report_Ticket.csv"}
+    excluded_file = {"ICFI.csv", "report_config.csv", "testing_report_config.csv","modular_report_config.csv", "Analytics_Report.csv", "testing_report_config.csv", "Report_Ticket.csv"}
     csv_files = glob.glob(os.path.join(directory, "*.csv"))
     csv_files = [f for f in csv_files if os.path.basename(f) not in excluded_file]
     return max(csv_files, key=os.path.getmtime) if csv_files else None
