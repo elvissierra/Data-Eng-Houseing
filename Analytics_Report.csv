@@ -1,6 +1,31 @@
-Ticketing,%,Count
+Ticketing- TT,%,Count
+poi change details,75.00%,6
+poi remove,12.50%,1
+poi review,12.50%,1
 
-Fields,%,Count
+Ticketing- LER,%,Count
+completion,100.00%,8
 
-Yes/No/NA,%,Count
+Fields- SF,%,Count
+closures,12.50%,1
+geocode,25.00%,2
+hours,12.50%,1
+modern category,12.50%,1
+name,37.50%,3
+
+Fields- EF,%,Count
+closures,12.50%,1
+geocode,25.00%,2
+hours,12.50%,1
+modern category,12.50%,1
+name,25.00%,2
+new poi,12.50%,1
+
+Fields- OM,%,Count
+,87.50%,7
+missing or incorrect top category,12.50%,1
+
+Yes/No/NA- ACSFE,%,Count
+no,12.50%,1
+yes,87.50%,7
 

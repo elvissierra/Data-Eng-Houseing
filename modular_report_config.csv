@@ -1,8 +1,9 @@
-GROUP,COLUMN,VALUE,AGGREGATE,ROOT_ONLY,DELIMITER,LABEL
-Country Code,country code,us,,,,
-Cat Head Node,Corrections col - Modern Category - Name,beauty salon,no,yes,.,
-Cat Head Node,Corrections col - Modern Category - Name,toy store,no,yes,.,
-Cat Root Node,Corrections col - Modern Category - Path,beauty_and_spa,no,yes,.,
-Cat Root Node,Corrections col - Modern Category - Path,shopping,no,yes,.,
-Suggested- Geocode/Category/Name,"Name, Geocode and Category Suggested?",,yes,,,
-If not OW does it exist?,"If no, Does OW exist?",,yes,,,
+Edited fields,Suggested fields,Ticket type,Last Editor Resolution,Other markings made along with procedural marking?,All customer-suggested fields edited?
+Geocode,Geocode,POI Change Details (High Priority),Completion Reason POI - POI Changed,,Yes
+Hours,Hours | Comment,POI Change Details (Unspecified),Completion Reason POI - POI Changed,,Yes
+New POI | Name | URL | Geocode | Phone | Hours | Modern Category,Name,POI Change Details (Unspecified),Completion Reason POI - POI Added,,Yes
+Name,Name,POI Change Details (Unspecified),Completion Reason POI - POI Changed,,Yes
+Geocode,Geocode,POI Change Details (Unspecified),Completion Reason POI - POI Changed,,Yes
+Modern Category,Modern Category | Comment,POI Review (Moderncategory Cleanup),Completion Reason POI - POI Changed,Missing Or Incorrect Top Category,Yes
+Name | Address,Name | Address | Geocode,POI Change Details (Unspecified),Completion Reason POI - POI Changed,,No
+Closures | Name | URL | Address | Geocode | Hours | Modern Category,Closures,POI Remove (Unspecified),Completion Reason POI - POI Changed,,Yes
