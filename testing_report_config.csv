@@ -1,7 +1,0 @@
-GROUP,COLUMN,VALUE,AGGREGATE,ROOT_ONLY,DELIMITER,LABEL
-Ticketing- TT,ticket type,,yes,yes,(,Ticket Type
-Ticketing- LER,last editor resolution,,yes,yes, ,Last Editor Resolution
-Fields- SF,suggested fields,,yes,yes,|,Suggested Fields
-Fields- EF,edited fields,,yes,yes,|,Edited Fields
-Fields- OM,Other markings made along with procedural marking?,,yes,no,,Other markings made along with procedural marking?
-Yes/No/NA- ACSFE,All customer-suggested fields edited?,,yes,no,,All customer-suggested fields edited?
