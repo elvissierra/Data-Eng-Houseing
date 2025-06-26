@@ -5,7 +5,7 @@ import glob
 import re
 
 
-def find_latest_report(directory='csv/'):
+def find_latest_report(directory='csv_files/'):
     """ Finds most recent CSV report file in current directory. """
     excluded_file = {"ICFI.csv", "report_config.csv", "testing_report_config.csv", "Analytics_Report.csv", "testing_report_config.csv", "Report_Ticket.csv"}
     csv_files = glob.glob(os.path.join(directory, "*.csv"))
@@ -94,7 +94,7 @@ if __name__ == "__main__":
         raise FileNotFoundError("No valid report CSV found.")
     print(f"📄 Using latest report: {latest_report}")
 
-    config_path = "csv/report_config.csv"
+    config_path = "csv_files/report_config.csv"
     config_df = load_config_file(config_path)
     report_df = pd.read_csv(latest_report)
 
