@@ -94,7 +94,7 @@ if __name__ == "__main__":
         raise FileNotFoundError("No valid report CSV found.")
     print(f"📄 Using latest report: {latest_report}")
 
-    config_path = "csv/modular_report_config.csv"
+    config_path = "csv/report_config.csv"
     config_df = load_config_file(config_path)
     report_df = pd.read_csv(latest_report)
 
