@@ -4,6 +4,7 @@ import os
 import glob
 import re
 
+# Modular Report Generator for reporting on CSV files
 
 def find_latest_report(directory='csv_files/'):
     """ Finds most recent CSV report file in current directory. """
