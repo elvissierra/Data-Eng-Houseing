@@ -49,7 +49,7 @@ def generate_dynamic_report(report_df, config_df, output_path="Analytics_Report.
     config_df["root_only"] = (config_df).get("root_only", "").str.strip().str.lower().isin(["yes", "true", "1"])
     config_df["delimiter"] = (config_df).get("delimiter", " ")
     config_df["seperate_nodes"] = (config_df).get("seperate_nodes", "")
-    #config_df["value"] = (config_df).get("value", "").str.strip().str.lower()
+    config_df["value"] = (config_df).get("value", "").str.strip().str.lower()
     config_df["label"] = (config_df).get("label", "")
     #get unique groups
     groups = config_df["group"].unique()
@@ -65,13 +65,15 @@ def generate_dynamic_report(report_df, config_df, output_path="Analytics_Report.
             label = target_value or row.get("label")
             is_root = row["root_only"]
             delimiter = row["delimiter"]
-            seperate_nodes = row["seperate_nodes"]
+            #seperate_nodes = row["seperate_nodes"]
 
             if col not in report_df.columns:
                 print(f"⚠️ Warning: '{col}' not found in report. Skipping.")
                 continue
 
             series = report_df[col].fillna("").astype(str)
+            if target_value:
+                target_value = target_value.lower()
 
             if is_root:
                 series = series.str.split(re.escape(delimiter)).str[0]
@@ -92,11 +94,11 @@ def generate_dynamic_report(report_df, config_df, output_path="Analytics_Report.
                 match_count = int(matched.sum())
                 percent = round(match_count / total_rows * 100, 2)
                 section.append([label, f"{percent:.2f}%", match_count])
-            if seperate_nodes:
-                expand = series.str.split(delimiter).explode()
-                cleaned = expand.str.strip()
-                counts = cleaned.value_counts()
-                print(counts)
+            #if seperate_nodes:
+            #    expand = series.str.split(delimiter).explode()
+            #    cleaned = expand.str.strip()
+            #    counts = cleaned.value_counts()
+            #    print(counts)
 
         section_blocks.append(section)
 
