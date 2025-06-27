@@ -6,7 +6,7 @@ import re
 
 # Modular Report Generator for reporting on CSV files
 
-def find_latest_report(directory='csv_files/'):
+def find_latest_report(directory="csv_files/"):
     """ Finds most recent CSV report file in current directory. """
     excluded_file = {"ICFI.csv", "report_config.csv", "testing_report_config.csv", "Analytics_Report.csv", "testing_report_config.csv", "Report_Ticket.csv"}
     csv_files = glob.glob(os.path.join(directory, "*.csv"))
@@ -26,7 +26,7 @@ def normalize_columns(df):
 
 def write_custom_report(output_path, section_data):
     """ Write report to CSV """
-    with open(output_path, 'w', newline='') as f:
+    with open(output_path, "w", newline="") as f:
         writer = csv.writer(f)
         for section in section_data:
             writer.writerows(section)
@@ -34,42 +34,52 @@ def write_custom_report(output_path, section_data):
 
 def generate_dynamic_report(report_df, config_df, output_path="Analytics_Report.csv"):
     """ Generate Configurable Report """
+    #determine total rows
     total_rows = len(report_df)
+    #init data blocks
     section_blocks = []
-
+    #normalize headers
     report_df = normalize_columns(report_df)
+    #copy config_df to avoid modifying original
     config_df = config_df.copy()
+    #normalize config headers
     config_df.columns = config_df.columns.str.strip().str.lower()
-    config_df["aggregate"] = (config_df).get("aggregate", "").str.strip().str.lower().isin(['yes', 'true', '1'])
-    config_df["root_only"] = (config_df).get("root_only", "").str.strip().str.lower().isin(['yes', 'true', '1'])
-    config_df["delimiter"] = (config_df).get("delimiter", ".")
-
-    groups = config_df['group'].unique()
+    #ensure required columns exist
+    config_df["aggregate"] = (config_df).get("aggregate", "").str.strip().str.lower().isin(["yes", "true", "1"])
+    config_df["root_only"] = (config_df).get("root_only", "").str.strip().str.lower().isin(["yes", "true", "1"])
+    config_df["delimiter"] = (config_df).get("delimiter", " ")
+    config_df["seperate_nodes"] = (config_df).get("seperate_nodes", "")
+    #config_df["value"] = (config_df).get("value", "").str.strip().str.lower()
+    config_df["label"] = (config_df).get("label", "")
+    #get unique groups
+    groups = config_df["group"].unique()
 
     for group in groups:
-        group_df = config_df[config_df['group'] == group]
-        section = [[f"{group}", "%", "Count"]]  # header row
+        group_df = config_df[config_df["group"] == group]
+        section = [[f"{group}", "%", "Count"]]
 
         for _, row in group_df.iterrows():
-            col = row['column'].strip().lower()
+            col = row["column"].strip().lower()
             is_aggregate = row["aggregate"]
             target_value = str(row.get("value", "")).strip().lower()
-            label = target_value or row.get('label')
+            label = target_value or row.get("label")
             is_root = row["root_only"]
             delimiter = row["delimiter"]
-
+            seperate_nodes = row["seperate_nodes"]
 
             if col not in report_df.columns:
                 print(f"⚠️ Warning: '{col}' not found in report. Skipping.")
                 continue
+
             series = report_df[col].fillna("").astype(str)
+
             if is_root:
                 series = series.str.split(re.escape(delimiter)).str[0]
             if is_aggregate:
                 unique_values = series.str.strip().str.lower().unique()
                 for val in sorted(unique_values):
-                    mask = series.str.strip().str.lower().eq(val)
-                    match_count = int(mask.sum())
+                    match = series.str.strip().str.lower().eq(val)
+                    match_count = int(match.sum())
                     percent = round((match_count / total_rows) * 100, 2)
                     section.append([val, f"{percent:.2f}%", match_count])
             else:
@@ -82,6 +92,11 @@ def generate_dynamic_report(report_df, config_df, output_path="Analytics_Report.
                 match_count = int(matched.sum())
                 percent = round(match_count / total_rows * 100, 2)
                 section.append([label, f"{percent:.2f}%", match_count])
+            if seperate_nodes:
+                expand = series.str.split(delimiter).explode()
+                cleaned = expand.str.strip()
+                counts = cleaned.value_counts()
+                print(counts)
 
         section_blocks.append(section)
 
