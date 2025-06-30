@@ -45,11 +45,13 @@ def generate_dynamic_report(report_df, config_df, output_path="Analytics_Report.
     #normalize config headers
     config_df.columns = config_df.columns.str.strip().str.lower()
     #ensure required columns exist
-    config_df["aggregate"] = (config_df).get("aggregate", "").str.strip().str.lower().isin(["yes", "true", "1"])
+
+    config_df["value"] = (config_df["value"].fillna("").astype(str).str.lower())
+    config_df["aggregate"] = (config_df["aggregate"].fillna("").astype(str).str.strip().str.lower().isin(["yes", "true", "1"]))
     config_df["root_only"] = (config_df).get("root_only", "").str.strip().str.lower().isin(["yes", "true", "1"])
     config_df["delimiter"] = (config_df).get("delimiter", " ")
-    config_df["seperate_nodes"] = (config_df).get("seperate_nodes", "")
-    config_df["value"] = (config_df).get("value", "").str.strip().str.lower()
+    #enable enum for the specified rows
+    #config_df["seperate_nodes"] = (config_df["seperate_nodes"].fillna("").astype(str).str.strip().str.lower().isin(["yes", "true", "1"]))
     config_df["label"] = (config_df).get("label", "")
     #get unique groups
     groups = config_df["group"].unique()
@@ -60,23 +62,26 @@ def generate_dynamic_report(report_df, config_df, output_path="Analytics_Report.
 
         for _, row in group_df.iterrows():
             col = row["column"].strip().lower()
-            is_aggregate = row["aggregate"]
             target_value = str(row.get("value", "")).strip().lower()
-            label = target_value or row.get("label")
+            is_aggregate = row["aggregate"]
             is_root = row["root_only"]
-            delimiter = row["delimiter"]
+            delimiter = row["delimiter"] or r"/|"
             #seperate_nodes = row["seperate_nodes"]
+            label = target_value or row.get("label")
 
             if col not in report_df.columns:
                 print(f"⚠️ Warning: '{col}' not found in report. Skipping.")
                 continue
-
             series = report_df[col].fillna("").astype(str)
-            if target_value:
-                target_value = target_value.lower()
 
+            if target_value:
+                for val in series:
+                    if isinstance(val, str):
+                        val = val.strip().lower()
+                        return val
             if is_root:
                 series = series.str.split(re.escape(delimiter)).str[0]
+
             if is_aggregate:
                 unique_values = series.str.strip().str.lower().unique()
                 for val in sorted(unique_values):
@@ -94,11 +99,13 @@ def generate_dynamic_report(report_df, config_df, output_path="Analytics_Report.
                 match_count = int(matched.sum())
                 percent = round(match_count / total_rows * 100, 2)
                 section.append([label, f"{percent:.2f}%", match_count])
+
             #if seperate_nodes:
-            #    expand = series.str.split(delimiter).explode()
-            #    cleaned = expand.str.strip()
-            #    counts = cleaned.value_counts()
-            #    print(counts)
+            #    expand = (series.str.split(r"\s*\|\s*", regex=True).explode().str.strip().str.lower())
+            #    counts = expand.value_counts()
+            #    for val, count in counts.items():
+            #        percent = round((count / total_rows) * 100, 2)
+            #        section.append([val, f"{percent:.2f}%", count])
 
         section_blocks.append(section)
 
