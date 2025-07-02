@@ -5,8 +5,8 @@ import glob
 import re
 
 
-def find_latest_report(directory="csv_files/"):
-    excluded = {"ICFI.csv", "report_config.csv", "testing_report_config.csv", "Analytics_Report.csv", "Report_Ticket.csv"}
+def find_latest_report(directory="ReportingAuto/"):
+    excluded = {"report_config.csv", "Analytics_Report.csv"}
     files = glob.glob(os.path.join(directory, "*.csv"))
     files = [f for f in files if os.path.basename(f) not in excluded]
     return max(files, key=os.path.getmtime) if files else None
@@ -34,10 +34,8 @@ def write_custom_report(output_path, sections):
             writer.writerow([])
 
 
-def generate_dynamic_report(report_df, config_df, output_path="Analytics_Report.csv"):
-    """
-      Sectioned by column A in report_config
-    """
+def generate_dynamic_report(report_df, config_df, output_path="ReportingAuto/Analytics_Report.csv"):
+    """ Sectioned by column A in report_config """
     # normalize data
     report_df = normalize_columns(report_df)
     total_config = len(config_df)
@@ -47,7 +45,7 @@ def generate_dynamic_report(report_df, config_df, output_path="Analytics_Report.
     cfg.columns = cfg.columns.str.strip().str.lower().str.replace(" ", "_")
     cfg["column"] = cfg["column"].astype(str).str.strip()
     
-    # determine output
+    # determine output calcs
     if "value" in cfg.columns:
         cfg["value"] = cfg["value"].fillna("").astype(str).str.lower()
     else:
@@ -139,6 +137,6 @@ if __name__ == "__main__":
     if not latest:
         raise FileNotFoundError("No valid report_config found.")
     print(f"📄 Using report: {latest}")
-    cfg = load_config_file("csv_files/report_config.csv")
+    cfg = load_config_file("ReportingAuto/report_config.csv")
     df = pd.read_csv(latest)
     generate_dynamic_report(df, cfg)
