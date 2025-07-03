@@ -5,7 +5,7 @@ import glob
 import re
 
 
-def find_latest_report(directory="ReportingAuto/"):
+def find_latest_report(directory="csv_files/"):
     excluded = {"report_config.csv", "Analytics_Report.csv"}
     files = glob.glob(os.path.join(directory, "*.csv"))
     files = [f for f in files if os.path.basename(f) not in excluded]
@@ -137,6 +137,6 @@ if __name__ == "__main__":
     if not latest:
         raise FileNotFoundError("No valid report_config found.")
     print(f"📄 Using report: {latest}")
-    cfg = load_config_file("ReportingAuto/report_config.csv")
+    cfg = load_config_file("csv_files/report_config.csv")
     df = pd.read_csv(latest)
     generate_dynamic_report(df, cfg)
