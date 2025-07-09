@@ -82,7 +82,8 @@ def get_locked_label(driver):
         except:
             continue
     return modern
-
+#remove up to versions check
+#instead of versions check-> find locked  field and scrap along with underscript
 def find_change_version(place_id, driver, threshold=datetime(2025,6,20)):
     wait = WebDriverWait(driver, TIMEOUT)
     print(f"🔄 Processing place_id={place_id}")
