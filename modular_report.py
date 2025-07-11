@@ -54,37 +54,17 @@ def generate_dynamic_report(report_df, config_df, output_path="csv_files/Analyti
 
     if "aggregate" in cfg.columns:
         cfg["aggregate"] = (
-            cfg["aggregate"]
-            .fillna(False)
-            .astype(str)
-            .str.strip()
-            .str.lower()
-            .isin(["yes", "true"])
-        )
+            cfg["aggregate"].fillna(False).astype(str).str.strip().str.lower().isin(["yes", "true"]))
     else:
         cfg["aggregate"] = False
 
     if "root_only" in cfg.columns:
-        cfg["root_only"] = (
-            cfg["root_only"]
-            .fillna(False)
-            .astype(str)
-            .str.strip()
-            .str.lower()
-            .isin(["yes", "true"])
-        )
+        cfg["root_only"] = (cfg["root_only"].fillna(False).astype(str).str.strip().str.lower().isin(["yes", "true"]))
     else:
         cfg["root_only"] = False
 
     if "separate_nodes" in cfg.columns:
-        cfg["separate_nodes"] = (
-            cfg["separate_nodes"]
-            .fillna(False)
-            .astype(str)
-            .str.strip()
-            .str.lower()
-            .isin(["yes", "true"])
-        )
+        cfg["separate_nodes"] = (cfg["separate_nodes"].fillna(False).astype(str).str.strip().str.lower().isin(["yes", "true"]))
     else:
         cfg["separate_nodes"] = False
 
@@ -94,14 +74,7 @@ def generate_dynamic_report(report_df, config_df, output_path="csv_files/Analyti
         cfg["delimiter"] = ""
 
     if "average" in cfg.columns:
-        cfg["average"] = (
-            cfg["average"]
-            .fillna(False)
-            .astype(str)
-            .str.strip()
-            .str.lower()
-            .isin(["yes", "true"])
-        )
+        cfg["average"] = (cfg["average"].fillna(False).astype(str).str.strip().str.lower().isin(["yes", "true"]))
     else:
         cfg["average"] = False
 
@@ -116,7 +89,7 @@ def generate_dynamic_report(report_df, config_df, output_path="csv_files/Analyti
 
     for col_name in cfg["column"].unique():
         
-        # locate duplicates and times seen
+        # locate duplicates and instances
         if cfg.loc[cfg["column"] == col_name, "duplicate"].any():
             raw = report_df[col_name].fillna("").astype(str)
             counts = raw.value_counts()
@@ -127,7 +100,7 @@ def generate_dynamic_report(report_df, config_df, output_path="csv_files/Analyti
             sections.append(section)
             continue
 
-        # calc average of column provided integers
+        # calc average of column, provided integers
         if cfg.loc[cfg["column"] == col_name, "average"].any():
             raw = report_df[col_name].fillna("").astype(str)
             if not raw.str.match(r"^\d+(\.\d+)?%?$").all():
@@ -143,20 +116,21 @@ def generate_dynamic_report(report_df, config_df, output_path="csv_files/Analyti
                     [[col_name.upper(), "", "Average"], ["", "", f"{avg:.2f}{unit}"]]
                 )
             continue
-        section = [[col_name.upper(), "%", "Count"]]
+
         entries = cfg[cfg["column"] == col_name]
         label_counts = {}
-        # calcs given a search VALUE
+        # populate label counts
         search_value = entries[entries["value"] != ""]
+
         if not search_value.empty:
-            # only count specified values
+            # search VALUE entry
             for _, r in search_value.iterrows():
-                orig = report_df[col_name].fillna("").astype(str)
+                series = report_df[col_name].fillna("").astype(str)
                 # separate nodes with pandas explode method
                 if r["separate_nodes"]:
                     items = (
-                        orig.str.split(
-                            rf"\s*{re.escape(r['delimiter'])}\s*", regex=True
+                        series.str.split(
+                            rf"\s*{re.escape(r["delimiter"])}\s*", regex=True
                         )
                         .explode()
                         .dropna()
@@ -165,54 +139,52 @@ def generate_dynamic_report(report_df, config_df, output_path="csv_files/Analyti
                     )
                     cnt = int((items == r["value"]).sum())
                 else:
-                    series = orig
                     if r["root_only"]:
                         series = series.str.split(
                             re.escape(r["delimiter"]), expand=True
                         )[0]
-                    pattern = rf"(?:^|\|)\s*{re.escape(r['value'])}\s*(?:\||$)"
+                    pattern = rf"(?:^|\|)\s*{re.escape(r["value"])}\s*(?:\||$)"
                     cnt = int(series.str.lower().str.contains(pattern).sum())
                 label = r["value"] or "None"
                 label_counts[label] = cnt
         else:
-            # no specified VALUE
+            # no specified VALUE entry
             for _, r in entries.iterrows():
-                orig = report_df[col_name].fillna("").astype(str)
-
+                series = report_df[col_name].fillna("").astype(str)
+                # explode indexes by provided delimiter
                 if r["separate_nodes"]:
                     items = (
-                        orig.str.split(
-                            rf"\s*{re.escape(r['delimiter'])}\s*", regex=True
-                        )
-                        .explode()
-                        .dropna()
-                        .str.strip()
-                        .str.lower()
-                    )
+                        series.str.split(
+                            rf"\s*{re.escape(r["delimiter"])}\s*", regex=True
+                        ).explode().dropna().str.strip().str.lower())
                     for val in items:
                         label = val or "None"
                         label_counts[label] = label_counts.get(label, 0) + 1
-
+                # aggregate column
                 elif r["aggregate"]:
-                    series = orig
+                    # return index[0] provided delimiter
                     if r["root_only"]:
-                        series = series.str.split(
-                            re.escape(r["delimiter"]), expand=True
-                        )[0]
+                        series = series.str.split(re.escape(r["delimiter"]), expand=True)[0]
                     for val in sorted(series.str.strip().str.lower().unique()):
                         label = val or "None"
                         cnt = int((series.str.strip().str.lower() == val).sum())
                         label_counts[label] = cnt
                 else:
-                    series = orig
+                # index[0] provided a str
                     if r["root_only"]:
                         series = series.str.split(
                             re.escape(r["delimiter"]), expand=True
                         )[0]
-                    pattern = rf"(?:^|\|)\s*{re.escape(r['value'])}\s*(?:\||$)"
+                    pattern = rf"(?:^|\|)\s*{re.escape(r["value"])}\s*(?:\||$)"
                     cnt = int(series.str.lower().str.contains(pattern).sum())
                     label = r["value"] or "None"
                     label_counts[label] = label_counts.get(label, 0) + cnt
+
+        section = [[col_name.upper(), "%", "Count"]]
+        for label, cnt in label_counts.items():
+            pct = round(cnt / total_rows * 100, 2)
+            section.append([label, f"{pct:.2f}%", cnt])
+        sections.append(section)
 
     write_custom_report(output_path, sections)
     print(f"✅ Report generated: {output_path}")
