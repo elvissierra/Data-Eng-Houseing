@@ -4,6 +4,7 @@ import os
 import glob
 import re
 
+columns = ("1st", "2nd", "3rd", "proceeding")
 
 def find_latest_report(directory="csv_files/"):
     """ find latest csv outside of config and output report """
@@ -21,8 +22,13 @@ def load_config_file(config_path):
 
 
 def normalize_columns(df):
-    """ Normalize columns """
+    """ Normalize columns Headers"""
     df.columns = df.columns.str.strip().str.lower()
+    for i, f in enumerate(df):
+        if i < 3:
+            print(f"{columns[i]} header:", f)
+        else:
+            print(f"{columns[3]} header:", f)
     return df
 
 
