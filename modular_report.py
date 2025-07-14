@@ -4,7 +4,6 @@ import os
 import glob
 import re
 
-columns = ("1st", "2nd", "3rd", "proceeding")
 
 def find_latest_report(directory="csv_files/"):
     """ find latest csv outside of config and output report """
@@ -24,11 +23,7 @@ def load_config_file(config_path):
 def normalize_columns(df):
     """ Normalize columns Headers"""
     df.columns = df.columns.str.strip().str.lower()
-    for i, f in enumerate(df):
-        if i < 3:
-            print(f"{columns[i]} header:", f)
-        else:
-            print(f"{columns[3]} header:", f)
+    print(" | ".join(df.columns))
     return df
 
 
@@ -40,6 +35,28 @@ def write_custom_report(output_path, sections):
             writer.writerows(section)
             writer.writerow([])
 
+#def handle_headers(df, config_df):
+#    cfg = config_df.copy()
+#    for header in cfg.columns:
+
+
+#COLUMN | VALUE | AGGREGATE | ROOT_ONLY | DELIMITER | SEPERATE_NODES | DUPLICATE | AVERAGE
+
+#class ReportGenerator:
+#
+#    def __init__(self, report_df, config_df):
+#
+#    def normalize_config(self):
+#
+#    def count_labels(self, series, config_row):
+#
+#    def build_duplicates_section(self, col_name):
+#
+#    def build_average_section(self, col_name):
+#
+#    def build_label_count_section(self, col_name):
+#
+#    def generate(self, output_path):
 
 def generate_dynamic_report(report_df, config_df, output_path="csv_files/Analytics_Report.csv"):
     """ Sectioned by column A in report_config """
@@ -49,7 +66,7 @@ def generate_dynamic_report(report_df, config_df, output_path="csv_files/Analyti
     total_rows = len(report_df)
     # normalize config
     cfg = config_df.copy()
-    cfg.columns = cfg.columns.str.strip().str.lower().str.replace(" ", "_")
+    cfg.columns = cfg.columns.str.strip().str.lower()
     cfg["column"] = cfg["column"].astype(str).str.strip()
 
     # clean column headers
@@ -62,32 +79,33 @@ def generate_dynamic_report(report_df, config_df, output_path="csv_files/Analyti
         cfg["aggregate"] = (
             cfg["aggregate"].fillna(False).astype(str).str.strip().str.lower().isin(["yes", "true"]))
     else:
-        cfg["aggregate"] = False
+        cfg["aggregate"] = "False"
 
     if "root_only" in cfg.columns:
         cfg["root_only"] = (cfg["root_only"].fillna(False).astype(str).str.strip().str.lower().isin(["yes", "true"]))
     else:
-        cfg["root_only"] = False
-
-    if "separate_nodes" in cfg.columns:
-        cfg["separate_nodes"] = (cfg["separate_nodes"].fillna(False).astype(str).str.strip().str.lower().isin(["yes", "true"]))
-    else:
-        cfg["separate_nodes"] = False
+        cfg["root_only"] = "False"
 
     if "delimiter" in cfg.columns:
         cfg["delimiter"] = cfg["delimiter"].fillna("|").astype(str)
     else:
         cfg["delimiter"] = ""
 
-    if "average" in cfg.columns:
-        cfg["average"] = (cfg["average"].fillna(False).astype(str).str.strip().str.lower().isin(["yes", "true"]))
+    if "separate_nodes" in cfg.columns:
+        cfg["separate_nodes"] = (cfg["separate_nodes"].fillna(False).astype(str).str.strip().str.lower().isin(["yes", "true"]))
     else:
-        cfg["average"] = False
+        cfg["separate_nodes"] = "False"
 
     if "duplicate" in cfg.columns:
        cfg["duplicate"] = (cfg["duplicate"].fillna(False).astype(str).str.strip().str.lower().isin(["yes", "true"]))
     else:
-        cfg["duplicate"] = False
+        cfg["duplicate"] = "False"
+
+    if "average" in cfg.columns:
+        cfg["average"] = (cfg["average"].fillna(False).astype(str).str.strip().str.lower().isin(["yes", "true"]))
+    else:
+        cfg["average"] = "False"
+
 
     # build sections
     sections = []
