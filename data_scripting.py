@@ -140,4 +140,8 @@ def read_data(directory):
 file = read_data(directory + "report_config.csv")
 print(file.head())
 
-#22 
+#22 SQL solutions
+https://github.com/dataquestio/solutions/blob/master/600Solutions.sql
+
+
+#
