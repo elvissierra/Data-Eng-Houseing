@@ -13,6 +13,7 @@ Click -> filter field
                 -Brand Modern Category
                *-POI name prior to Brand Application
 """
+
 import datetime
 import re
 import csv
@@ -24,6 +25,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
+
 RED = "\033[91m"  # errors
 GREEN = "\033[92m"  # notes
 YELLOW = "\033[93m"  # warnings
@@ -32,6 +34,8 @@ RESET = "\033[0m"
 INPUT_CSV = "tickets/brand_matching.csv"
 OUTPUT_CSV = "tickets/matching_tagging_IN.csv"
 TIMEOUT = 40
+
+
 def start_driver():
     try:
         print("Initializing Safari webdriver...")
@@ -73,6 +77,8 @@ def start_driver():
         sys.exit()
     driver.set_window_rect(5, 30, 1440, 980)
     return driver
+
+
 def extract_brand_name(driver):
     """Brand Name - Returns only the clean brand name text, removing trailing parentheses."""
     try:
@@ -87,6 +93,8 @@ def extract_brand_name(driver):
         return brand_name_text
     except Exception:
         return "None"
+
+
 def extract_brand_applier_source(driver):
     """What Applied Brand? (Source) - Extracts the brand badge hover text (title attribute)"""
     try:
@@ -104,6 +112,8 @@ def extract_brand_applier_source(driver):
         return badge_hover
     except Exception:
         return "", ""
+
+
 def extract_brand_applier_vheader(driver):
     """What Applied Brand (Version Header) - Returns only the relevant header texts."""
     try:
@@ -132,6 +142,8 @@ def extract_brand_applier_vheader(driver):
         return filtered
     except Exception:
         return []
+
+
 def extract_brand_modern_category(driver):
     """Brand Modern Category"""
     try:
@@ -145,6 +157,8 @@ def extract_brand_modern_category(driver):
         return mod_cat_text
     except Exception:
         return "", ""
+
+
 def extract_poi_name_prior(driver):
     """POI name prior to Brand Application"""
     try:
@@ -158,6 +172,8 @@ def extract_poi_name_prior(driver):
         return prior_name_text
     except Exception:
         return "", ""
+
+
 # ------------ choose 1 of the following fields
 #  brand, name, url, phone_number, presence_period, is_blessed, geocode, category, relationship, address,
 #  hours_period, icon_custom_id, structured_attributes.is_apple_pay_supported, associated_app, vendor_geometry_id, vendor_geometry_id,
@@ -173,7 +189,7 @@ def choose_field(driver):
         WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable(
                 (
-                    By.XPATH,                                        # your chosen field "brand"
+                    By.XPATH,  # your chosen field "brand"
                     "//div[contains(@class, 'choices__item') and @data-value='brand']",
                 )
             )
@@ -182,12 +198,21 @@ def choose_field(driver):
         print(f"{RED}Timeout: 'Brand' filter not found or not clickable.{RESET}")
         return False
     return True
+
+
 def click_versions_tab(driver):
     WebDriverWait(driver, TIMEOUT).until(
         EC.element_to_be_clickable(
-            (By.XPATH,"//a[contains(@class,'nav-link') and normalize-space()='Versions']",))).click()
+            (
+                By.XPATH,
+                "//a[contains(@class,'nav-link') and normalize-space()='Versions']",
+            )
+        )
+    ).click()
+
+
 def collect_versions(driver):
-    """ Return sorted list of (datetime, entry_id). """
+    """Return sorted list of (datetime, entry_id)."""
     wait = WebDriverWait(driver, TIMEOUT)
     wait.until(
         EC.presence_of_all_elements_located((By.CSS_SELECTOR, "a[id^='entry-']"))
@@ -201,6 +226,8 @@ def collect_versions(driver):
         dt = datetime.datetime.strptime(txt.rsplit(" ", 1)[0], "%Y-%m-%d %I:%M %p")
         entries.append((dt, e.get_attribute("id")))
     return sorted(entries, key=lambda x: x[0])
+
+
 def click_version(driver, entry_id):
     wait = WebDriverWait(driver, TIMEOUT)
     wait.until(EC.element_to_be_clickable((By.ID, entry_id))).click()
@@ -208,6 +235,8 @@ def click_version(driver, entry_id):
         EC.presence_of_element_located((By.XPATH, "//div[@title='Modern Category']"))
     )
     wait.until(EC.presence_of_element_located((By.XPATH, "//div[@title='Hours']")))
+
+
 def scrape_badge(hyperlink, driver):
     print(f":arrows_counterclockwise: Processing POI={hyperlink}")
     driver.get(hyperlink)
@@ -257,6 +286,8 @@ def scrape_badge(hyperlink, driver):
         }
     finally:
         pass
+
+
 if __name__ == "__main__":
     driver = start_driver()
     with open(OUTPUT_CSV, "w", newline="", encoding="utf-8") as out_f:
