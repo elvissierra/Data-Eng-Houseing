@@ -7,26 +7,17 @@ import ast
 
 
 def clean_list_string(s, sep=", "):
-    """
-    Turn a Python-list literal string into a joined string:
-        "['a','b',…]" → "a, b, …"
-    Fallback to a simple strip if parsing fails.
-    """
     if not isinstance(s, str):
         return s
-    s = s.strip()  # just in case of leading/trailing whitespace
+    s = s.strip()
     try:
-        # if it's a valid Python literal list/tuple
         items = ast.literal_eval(s)
         if isinstance(items, (list, tuple)):
-            # convert everything to str, drop empties
             items = [str(i).strip() for i in items if str(i).strip()]
             return sep.join(items)
     except (ValueError, SyntaxError):
-        # not a literal list – fall back
         pass
 
-    # fallback: remove only [ ] and single/double quotes
     return re.sub(r"[\[\]'\"]+", "", s)
 
 def find_latest_report(directory="csv_files/"):
