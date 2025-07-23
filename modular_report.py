@@ -3,7 +3,31 @@ import csv
 import os
 import glob
 import re
+import ast
 
+
+def clean_list_string(s, sep=", "):
+    """
+    Turn a Python-list literal string into a joined string:
+        "['a','b',…]" → "a, b, …"
+    Fallback to a simple strip if parsing fails.
+    """
+    if not isinstance(s, str):
+        return s
+    s = s.strip()  # just in case of leading/trailing whitespace
+    try:
+        # if it's a valid Python literal list/tuple
+        items = ast.literal_eval(s)
+        if isinstance(items, (list, tuple)):
+            # convert everything to str, drop empties
+            items = [str(i).strip() for i in items if str(i).strip()]
+            return sep.join(items)
+    except (ValueError, SyntaxError):
+        # not a literal list – fall back
+        pass
+
+    # fallback: remove only [ ] and single/double quotes
+    return re.sub(r"[\[\]'\"]+", "", s)
 
 def find_latest_report(directory="csv_files/"):
     """ find latest csv outside of config and output report """
@@ -21,9 +45,8 @@ def load_config_file(config_path):
 
 
 def normalize_columns(df):
-    """ Normalize columns Headers"""
+    """ Normalize columns """
     df.columns = df.columns.str.strip().str.lower()
-    print(" | ".join(df.columns))
     return df
 
 
@@ -35,28 +58,6 @@ def write_custom_report(output_path, sections):
             writer.writerows(section)
             writer.writerow([])
 
-#def handle_headers(df, config_df):
-#    cfg = config_df.copy()
-#    for header in cfg.columns:
-
-
-#COLUMN | VALUE | AGGREGATE | ROOT_ONLY | DELIMITER | SEPERATE_NODES | DUPLICATE | AVERAGE
-
-#class ReportGenerator:
-#
-#    def __init__(self, report_df, config_df):
-#
-#    def normalize_config(self):
-#
-#    def count_labels(self, series, config_row):
-#
-#    def build_duplicates_section(self, col_name):
-#
-#    def build_average_section(self, col_name):
-#
-#    def build_label_count_section(self, col_name):
-#
-#    def generate(self, output_path):
 
 def generate_dynamic_report(report_df, config_df, output_path="csv_files/Analytics_Report.csv"):
     """ Sectioned by column A in report_config """
@@ -66,7 +67,7 @@ def generate_dynamic_report(report_df, config_df, output_path="csv_files/Analyti
     total_rows = len(report_df)
     # normalize config
     cfg = config_df.copy()
-    cfg.columns = cfg.columns.str.strip().str.lower()
+    cfg.columns = cfg.columns.str.strip().str.lower().str.replace(" ", "_")
     cfg["column"] = cfg["column"].astype(str).str.strip()
 
     # clean column headers
@@ -79,33 +80,53 @@ def generate_dynamic_report(report_df, config_df, output_path="csv_files/Analyti
         cfg["aggregate"] = (
             cfg["aggregate"].fillna(False).astype(str).str.strip().str.lower().isin(["yes", "true"]))
     else:
-        cfg["aggregate"] = "False"
+        cfg["aggregate"] = False
 
     if "root_only" in cfg.columns:
         cfg["root_only"] = (cfg["root_only"].fillna(False).astype(str).str.strip().str.lower().isin(["yes", "true"]))
     else:
-        cfg["root_only"] = "False"
+        cfg["root_only"] = False
+
+    if "separate_nodes" in cfg.columns:
+        cfg["separate_nodes"] = (cfg["separate_nodes"].fillna(False).astype(str).str.strip().str.lower().isin(["yes", "true"]))
+    else:
+        cfg["separate_nodes"] = False
 
     if "delimiter" in cfg.columns:
         cfg["delimiter"] = cfg["delimiter"].fillna("|").astype(str)
     else:
         cfg["delimiter"] = ""
 
-    if "separate_nodes" in cfg.columns:
-        cfg["separate_nodes"] = (cfg["separate_nodes"].fillna(False).astype(str).str.strip().str.lower().isin(["yes", "true"]))
+    if "average" in cfg.columns:
+        cfg["average"] = (cfg["average"].fillna(False).astype(str).str.strip().str.lower().isin(["yes", "true"]))
     else:
-        cfg["separate_nodes"] = "False"
+        cfg["average"] = False
 
     if "duplicate" in cfg.columns:
        cfg["duplicate"] = (cfg["duplicate"].fillna(False).astype(str).str.strip().str.lower().isin(["yes", "true"]))
     else:
-        cfg["duplicate"] = "False"
-
-    if "average" in cfg.columns:
-        cfg["average"] = (cfg["average"].fillna(False).astype(str).str.strip().str.lower().isin(["yes", "true"]))
+        cfg["duplicate"] = False
+      # handle clean option: if selected, clean column values using clean_list_string
+    if "clean" in cfg.columns:
+        cfg["clean"] = (
+            cfg["clean"]
+               .fillna(False)
+               .astype(str)
+               .str.strip()
+               .str.lower()
+               .isin(["yes", "true"])
+        )
     else:
-        cfg["average"] = "False"
-
+        cfg["clean"] = False
+  
+    # apply cleaning to report_df for columns marked 'clean'
+    for clean_col in cfg.loc[cfg["clean"], "column"]:
+        report_df[clean_col] = (
+            report_df[clean_col]
+            .fillna("")
+            .astype(str)
+            .apply(clean_list_string)
+        )
 
     # build sections
     sections = []
@@ -160,6 +181,7 @@ def generate_dynamic_report(report_df, config_df, output_path="csv_files/Analyti
                         .dropna()
                         .str.strip()
                         .str.lower()
+                        .apply(clean_list_string)
                     )
                     cnt = int((items == r["value"]).sum())
                 else:
@@ -215,10 +237,19 @@ def generate_dynamic_report(report_df, config_df, output_path="csv_files/Analyti
 
 
 if __name__ == "__main__":
-    latest = find_latest_report()
+    # report directory fix
+    current_dir = os.getcwd()
+    dir_name = os.path.basename(current_dir)
+    #if dir_name == 'csv_files':
+    #    report_dir = ''
+    #elif dir_name == 'atx-movate-places':
+    report_dir = 'csv_files/'
+    #else:
+    #    raise FileNotFoundError(f"Unrecognized directory '{dir_name}'. No valid report_config found.")
+    latest = find_latest_report(report_dir)
     if not latest:
         raise FileNotFoundError("No valid report_config found.")
     print(f"📄 Using report: {latest}")
-    cfg = load_config_file("csv_files/report_config.csv")
+    cfg = load_config_file(f"{report_dir}report_config.csv")
     df = pd.read_csv(latest)
-    generate_dynamic_report(df, cfg)
+    generate_dynamic_report(df, cfg, output_path=f"{report_dir}Analytics_Report.csv")
