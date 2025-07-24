@@ -1,9 +1,10 @@
-#!/usr/bin/env python3
 import argparse
 import os
 import sys
 import pandas as pd
 import re
+
+#to run -> python3 cleaned_column.py -i Untitled.csv -c this -o Untitled_output.csv
 
 def clean_markings(s: str) -> str:
     """
@@ -21,7 +22,7 @@ def main():
     parser.add_argument(
         "-i", "--input",
         required=True,
-        help="Path to the input CSV file (e.g. csv_files/test.csv)"
+        help="Path to the input CSV file (e.g. csv_files/Untitled.csv)"
     )
     parser.add_argument(
         "-c", "--column",

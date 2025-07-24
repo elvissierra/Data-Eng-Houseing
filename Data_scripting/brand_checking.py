@@ -31,8 +31,10 @@ GREEN = "\033[92m"  # notes
 YELLOW = "\033[93m"  # warnings
 MAGENTA = "\033[95m"  # end of each loop iteration warning to verify
 RESET = "\033[0m"
-INPUT_CSV = "tickets/brand_matching.csv"
-OUTPUT_CSV = "tickets/matching_tagging_IN.csv"
+
+
+INPUT_CSV = "csv_files/bmb.csv"
+OUTPUT_CSV = "csv_files/bmb_output.csv"
 TIMEOUT = 40
 
 
