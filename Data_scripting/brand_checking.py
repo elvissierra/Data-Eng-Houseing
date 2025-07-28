@@ -38,6 +38,7 @@ OUTPUT_CSV = "csv_files/bmb_output.csv"
 TIMEOUT = 40
 
 
+
 def start_driver():
     try:
         print("Initializing Safari webdriver...")
@@ -95,7 +96,7 @@ def extract_brand_name(driver):
         return brand_name_text
     except Exception:
         return "None"
-
+    
 
 def extract_brand_applier_source(driver):
     """What Applied Brand? (Source) - Extracts the brand badge hover text (title attribute)"""
@@ -180,6 +181,8 @@ def extract_poi_name_prior(driver):
 #  brand, name, url, phone_number, presence_period, is_blessed, geocode, category, relationship, address,
 #  hours_period, icon_custom_id, structured_attributes.is_apple_pay_supported, associated_app, vendor_geometry_id, vendor_geometry_id,
 #  vendor_contrivution, indoor, message_profile
+
+
 def choose_field(driver):
     dropdown_trigger_xpath = (
         "//div[contains(@class, 'choices__item--selectable') and @data-value='none']"
@@ -191,7 +194,7 @@ def choose_field(driver):
         WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable(
                 (
-                    By.XPATH,  # your chosen field "brand"
+                    By.XPATH,                                        # your chosen field "brand"
                     "//div[contains(@class, 'choices__item') and @data-value='brand']",
                 )
             )
@@ -205,16 +208,11 @@ def choose_field(driver):
 def click_versions_tab(driver):
     WebDriverWait(driver, TIMEOUT).until(
         EC.element_to_be_clickable(
-            (
-                By.XPATH,
-                "//a[contains(@class,'nav-link') and normalize-space()='Versions']",
-            )
-        )
-    ).click()
+            (By.XPATH,"//a[contains(@class,'nav-link') and normalize-space()='Versions']",))).click()
 
 
 def collect_versions(driver):
-    """Return sorted list of (datetime, entry_id)."""
+    """ Return sorted list of (datetime, entry_id). """
     wait = WebDriverWait(driver, TIMEOUT)
     wait.until(
         EC.presence_of_all_elements_located((By.CSS_SELECTOR, "a[id^='entry-']"))
@@ -240,7 +238,7 @@ def click_version(driver, entry_id):
 
 
 def scrape_badge(hyperlink, driver):
-    print(f":arrows_counterclockwise: Processing POI={hyperlink}")
+    print(f"🔄 Processing POI={hyperlink}")
     driver.get(hyperlink)
     try:
         click_versions_tab(driver)
@@ -312,9 +310,10 @@ if __name__ == "__main__":
             for row in reader:
                 hyperlink = row.get("Hyperlink", "").strip()
                 if not hyperlink:
-                    print(":exclamation: Missing Hyperlink; skipping.")
+                    print("❗ Missing Hyperlink; skipping.")
                     continue
                 result = scrape_badge(hyperlink, driver)
+                # print(f"Result: {json.dumps(result)}")
                 writer.writerow(result)
     driver.quit()
-    print(":white_check_mark: All done.")
+    print("✅ All done.")
