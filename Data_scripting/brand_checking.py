@@ -35,7 +35,7 @@ RESET = "\033[0m"
 
 INPUT_CSV = "csv_files/bmb.csv"
 OUTPUT_CSV = "csv_files/bmb_output.csv"
-TIMEOUT = 40
+TIMEOUT = 30
 
 
 
