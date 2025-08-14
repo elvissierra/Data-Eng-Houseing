@@ -55,13 +55,17 @@ def normalize_url(href: str):
         return cleaned or None
 
 def extract_url_by_label(driver, label: str, timeout: int = TIMEOUT):
-    """ Example labels: 'URL', 'Homepage'. Never use this for 'Other' """
+    """Return normalized href for the row whose label div has the given title.
+    Example labels: 'URL', 'Homepage'. Never use this for 'Other'.
+    If a visible 'None' placeholder is present, return the literal string 'None'.
+    Returns None when not found."""
     try:
         container = WebDriverWait(driver, timeout).until(
             EC.presence_of_element_located(
                 (By.XPATH, f"//div[@title='{label}']/following-sibling::div")
             )
         )
+        # If the UI explicitly shows a placeholder None, use it verbatim
         placeholders = container.find_elements(By.XPATH, ".//span[contains(@class,'text-placeholder')]")
         for sp in placeholders:
             txt = sp.text.strip()
@@ -122,17 +126,52 @@ def start_driver():
 
 
 def extract_brand_name(driver):
-    """Brand Name - Returns only the clean brand name text, removing trailing parentheses."""
+    """
+    Brand status detection:
+    - If a visible placeholder 'None' exists in the Brand row -> return "None" (not branded).
+    - If a literal brand string is present (e.g. " Bata "), return the cleaned value (e.g. "Bata").
+    - If it's branded but no literal brand text is visible (only an id link like (7926...)),
+      return the placeholder "not visible".
+    """
     try:
         brand_row = WebDriverWait(driver, TIMEOUT).until(
             EC.presence_of_element_located(
                 (By.XPATH, "//div[@title='Brand']/following-sibling::div")
             )
         )
-        value_div = brand_row.find_element(By.CSS_SELECTOR, "div.col-value.text-break")
-        brand_name_text = value_div.text.strip()
-        brand_name_text = re.sub(r"\s*\([^)]*\)$", "", brand_name_text)
-        return brand_name_text
+
+        # Case 1: explicit None placeholder (not branded)
+        placeholders = brand_row.find_elements(By.XPATH, 
+            ".//span[contains(@class,'text-placeholder')]")
+        for sp in placeholders:
+            if sp.text.strip().lower() == "none":
+                return "None"
+
+        # Value container typically holding the brand text and/or the id link
+        value_div = brand_row.find_element(By.CSS_SELECTOR, "div.col-value")
+        full_text = value_div.text.strip()
+
+        # Case 2: quoted brand text is visible -> extract inside quotes
+        m = re.search(r'"([^\"]+)"', full_text)
+        if m:
+            return m.group(1).strip()
+
+        # Remove purely numeric ids in parentheses, e.g. (792633534608192774)
+        cleaned = re.sub(r"\(\d+\)", "", full_text).strip()
+        # Normalize spaces and trim quotes
+        cleaned = re.sub(r"\s+", " ", cleaned).strip().strip('"').strip()
+
+        # If there is still alphabetic content, treat it as the brand
+        if re.search(r"[A-Za-z]", cleaned):
+            return cleaned
+
+        # If we reach here, the row isn't 'None' and contains an <a> link with only an id -> branded but not visible
+        links = value_div.find_elements(By.TAG_NAME, "a")
+        if links:
+            return "not visible"
+
+        # Fallback
+        return "None"
     except Exception:
         return "None"
 
@@ -318,7 +357,7 @@ def scrape_badge(hyperlink, driver):
             click_version(driver, entry_id)
             # brand check
             brand_name = extract_brand_name(driver)
-            if brand_name and brand_name != "None":
+            if brand_name != "None":
                 # scrape fields
                 brand_app_hover = extract_brand_applier_source(driver)
                 version_header = extract_brand_applier_vheader(driver)
