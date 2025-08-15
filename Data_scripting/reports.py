@@ -37,11 +37,23 @@ INPUT_CSV = "ICFI.csv"
 REPORTING_CSV = "Report_Ticket.csv"
 
 TICKET_TYPES = [
-    "POI Datascience", "POI Change Details",
-    "POI Remove",      "POI Add",
+    "POI Datascience",
+    "POI Change Details",
+    "POI Remove",
+    "POI Add",
 ]
 
-possible_fields = ["Closures", "Name", "URL", "Address", "Geocode", "Phone", "All-Year-Round Hours", "Modern Category", "Category"]
+possible_fields = [
+    "Closures",
+    "Name",
+    "URL",
+    "Address",
+    "Geocode",
+    "Phone",
+    "All-Year-Round Hours",
+    "Modern Category",
+    "Category",
+]
 
 LE_RES = ["Complete", "Reject"]
 L1_RES = ["Approved", "Rejected"]
@@ -51,83 +63,99 @@ ALL_CUS1 = ["YES", "NO", "N/A"]
 ALL_CUS2 = ["YES", "NO", "N/A"]
 
 SUG_FIELDS = [
-    "Closures","Brand","Name","URL","Address","Geocode","Phone","Hours",
-    "Modern Category","Category","Included Parent","Good-to-know Tag",
-    "Comment","New POI",
+    "Closures",
+    "Brand",
+    "Name",
+    "URL",
+    "Address",
+    "Geocode",
+    "Phone",
+    "Hours",
+    "Modern Category",
+    "Category",
+    "Included Parent",
+    "Good-to-know Tag",
+    "Comment",
+    "New POI",
 ]
 
-YES_NO = ["Yes","No","N/A"]
+YES_NO = ["Yes", "No", "N/A"]
 
 # Match CSV’s headers (incl. spaces & case)
-COL_TICKET   = "Ticket type"
-COL_LE       = "Last Editor Resolution"
-COL_L1       = "L1 Resolution"
-COL_L2       = "L2 Resolution"
-COL_SUGF     = "Suggested fields"
-COL_EDITED   = "Edited fields"
-COL_OTHER    = "Other markings made along with procedural marking?"
-COL_ISSUES   = "Are customer issues resolved?"
+COL_TICKET = "Ticket type"
+COL_LE = "Last Editor Resolution"
+COL_L1 = "L1 Resolution"
+COL_L2 = "L2 Resolution"
+COL_SUGF = "Suggested fields"
+COL_EDITED = "Edited fields"
+COL_OTHER = "Other markings made along with procedural marking?"
+COL_ISSUES = "Are customer issues resolved?"
 COL_ATTR_ERR = "Any attribute errors remain on the POI?"
-COL_DISCREP  = "Are there still discrepancies between research indicators and POI data?"
+COL_DISCREP = "Are there still discrepancies between research indicators and POI data?"
 COL_CUS1 = "All customer-suggested fields edited?"
 COL_CUS2 = "All customer-suggested fields have a corresponding dependent edit?"
 
 
-single_letters = [chr(i) for i in range(ord('A'), ord('Z') + 1)]
+single_letters = [chr(i) for i in range(ord("A"), ord("Z") + 1)]
 double_letters = [f"{a}{b}" for a in single_letters for b in single_letters]
 all_possible_cols = single_letters + double_letters
 
 
 def expand_col_range(start, end):
-    """ Expands a column range like 'AB-AI' to ['AB', 'AC', 'AD', ... 'AI']. """
+    """Expands a column range like 'AB-AI' to ['AB', 'AC', 'AD', ... 'AI']."""
     start_index = all_possible_cols.index(start)
     end_index = all_possible_cols.index(end)
-    return all_possible_cols[start_index:end_index + 1]
+    return all_possible_cols[start_index : end_index + 1]
+
 
 def preprocess_cols(col_list):
     expanded_cols = []
     for col in col_list:
 
-        col_parts = col.split(',')
+        col_parts = col.split(",")
         for col_part in col_parts:
             col_part = col_part.strip().upper()
-            if '-' in col_part:
-                start_col, end_col = col_part.split('-')
-                expanded_cols.extend(expand_col_range(start_col.strip(), end_col.strip()))
+            if "-" in col_part:
+                start_col, end_col = col_part.split("-")
+                expanded_cols.extend(
+                    expand_col_range(start_col.strip(), end_col.strip())
+                )
             else:
                 expanded_cols.append(col_part.strip())
     return expanded_cols
 
-def find_latest_report(directory='.'):
+
+def find_latest_report(directory="."):
     csv_file = glob.glob(os.path.join(directory, "*.csv"))
     if not csv_file:
         return None
     latest_file = max(csv_file, key=os.path.getmtime)
     return latest_file
 
+
 def load_report(csv_path: str):
-    df = pd.read_csv(csv_path, header=None, dtype=str).fillna('')
-    
+    df = pd.read_csv(csv_path, header=None, dtype=str).fillna("")
+
     # top-rows are single-value metadata
-    project_name            = df.iat[0,1].strip() or None
-    project_tab             = df.iat[1,1].strip() or None
-    quip_link_raw           = df.iat[2,1].strip()
-    quip_link               = f"https://quip-apple.com/{quip_link_raw}" if quip_link_raw else None
-    warnings_col            = df.iat[3,1].strip().upper() or None
-    start_row_txt           = df.iat[4,1].strip()
-    start_row               = int(start_row_txt) if start_row_txt.isdigit() else None
-    last_ran_date           = df.iat[5,1].strip() or None
-    
+    project_name = df.iat[0, 1].strip() or None
+    project_tab = df.iat[1, 1].strip() or None
+    quip_link_raw = df.iat[2, 1].strip()
+    quip_link = f"https://quip-apple.com/{quip_link_raw}" if quip_link_raw else None
+    warnings_col = df.iat[3, 1].strip().upper() or None
+    start_row_txt = df.iat[4, 1].strip()
+    start_row = int(start_row_txt) if start_row_txt.isdigit() else None
+    last_ran_date = df.iat[5, 1].strip() or None
+
     # numeric runtimes
     try:
-        last_avg_ticket_runtime = float(df.iat[6,1])
+        last_avg_ticket_runtime = float(df.iat[6, 1])
     except ValueError:
         last_avg_ticket_runtime = None
-    last_total_runtime       = df.iat[7,1].strip() or None
+    last_total_runtime = df.iat[7, 1].strip() or None
 
     # determine last non-blank ID row by dropping blank on col W (index 22)
     body = df.iloc[2:].reset_index(drop=True)
-    body = body[body.iloc[:,22].astype(bool)]
+    body = body[body.iloc[:, 22].astype(bool)]
     if not body.empty:
         last_idx_zero_based = body.index[-1]
         last_id_row = last_idx_zero_based + 4  # offset back to original CSV row
@@ -135,7 +163,7 @@ def load_report(csv_path: str):
         last_id_row = None
 
     # ID type is in row 10 (i=9), col W (index 22)
-    ids_type = df.iat[9,22].strip() or None
+    ids_type = df.iat[9, 22].strip() or None
 
     return {
         "project_name": project_name,

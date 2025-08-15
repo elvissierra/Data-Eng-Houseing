@@ -7,7 +7,7 @@ import select
 import tty
 import termios
 
-STOP_KEY = 'q'
+STOP_KEY = "q"
 
 LOG_INTERVAL = 0.5
 
@@ -18,15 +18,16 @@ MESSAGES = [
     "Transforming values...",
     "Writing to database...",
     "Cleaning up resources...",
-    "Finalizing report..."
+    "Finalizing report...",
 ]
+
 
 def prevent_sleep():
     """
     Prevents the Mac from sleeping by launching the `caffeinate` subprocess.
     """
     try:
-        return subprocess.Popen(['caffeinate', '-s'])
+        return subprocess.Popen(["caffeinate", "-s"])
     except FileNotFoundError:
         print("Warning: `caffeinate` not found. The system may sleep during the run.")
         return None
@@ -84,5 +85,5 @@ def simulate_processing():
     print(f"\nSimulation stopped. Total run time: {elapsed:.2f} seconds.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     simulate_processing()

@@ -4,7 +4,8 @@ import sys
 import pandas as pd
 import re
 
-#to run -> python3 cleaned_column.py -i Untitled.csv -c this -o Untitled_output.csv
+# to run -> python3 cleaned_column.py -i Untitled.csv -c this -o Untitled_output.csv
+
 
 def clean_markings(s: str) -> str:
     """
@@ -15,28 +16,30 @@ def clean_markings(s: str) -> str:
         return s
     return re.sub(r"[\[\]\"']+", "", s)
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Clean markings from one column in a CSV, preserving commas and casing."
     )
     parser.add_argument(
-        "-i", "--input",
+        "-i",
+        "--input",
         required=True,
-        help="Path to the input CSV file (e.g. csv_files/Untitled.csv)"
+        help="Path to the input CSV file (e.g. csv_files/Untitled.csv)",
     )
     parser.add_argument(
-        "-c", "--column",
-        required=True,
-        help="Name of the column to clean"
+        "-c", "--column", required=True, help="Name of the column to clean"
     )
     parser.add_argument(
-        "-o", "--output_col",
+        "-o",
+        "--output_col",
         required=True,
-        help="Path to write CSV of just the cleaned column"
+        help="Path to write CSV of just the cleaned column",
     )
     parser.add_argument(
-        "-f", "--full_output",
-        help="(Optional) Path to write the full DataFrame with cleaned column; if omitted, input is overwritten"
+        "-f",
+        "--full_output",
+        help="(Optional) Path to write the full DataFrame with cleaned column; if omitted, input is overwritten",
     )
     args = parser.parse_args()
 
@@ -62,6 +65,7 @@ def main():
     # Write column-only CSV
     df[[args.column]].to_csv(args.output_col, index=False)
     print(f"✅ Cleaned column '{args.column}' written to: {args.output_col}")
+
 
 if __name__ == "__main__":
     main()

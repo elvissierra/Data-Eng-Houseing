@@ -38,7 +38,6 @@ OUTPUT_CSV = "csv_files/bmb_output.csv"
 TIMEOUT = 30
 
 
-
 def start_driver():
     try:
         print("Initializing Safari webdriver...")
@@ -96,7 +95,7 @@ def extract_brand_name(driver):
         return brand_name_text
     except Exception:
         return "None"
-    
+
 
 def extract_brand_applier_source(driver):
     """What Applied Brand? (Source) - Extracts the brand badge hover text (title attribute)"""
@@ -194,7 +193,7 @@ def choose_field(driver):
         WebDriverWait(driver, TIMEOUT).until(
             EC.element_to_be_clickable(
                 (
-                    By.XPATH,                                        # your chosen field "brand"
+                    By.XPATH,  # your chosen field "brand"
                     "//div[contains(@class, 'choices__item') and @data-value='brand']",
                 )
             )
@@ -208,11 +207,16 @@ def choose_field(driver):
 def click_versions_tab(driver):
     WebDriverWait(driver, TIMEOUT).until(
         EC.element_to_be_clickable(
-            (By.XPATH,"//a[contains(@class,'nav-link') and normalize-space()='Versions']",))).click()
+            (
+                By.XPATH,
+                "//a[contains(@class,'nav-link') and normalize-space()='Versions']",
+            )
+        )
+    ).click()
 
 
 def collect_versions(driver):
-    """ Return sorted list of (datetime, entry_id). """
+    """Return sorted list of (datetime, entry_id)."""
     wait = WebDriverWait(driver, TIMEOUT)
     wait.until(
         EC.presence_of_all_elements_located((By.CSS_SELECTOR, "a[id^='entry-']"))

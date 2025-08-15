@@ -37,6 +37,7 @@ INPUT_CSV = "bmb_201.csv"
 OUTPUT_CSV = "bmb_201_output.csv"
 TIMEOUT = 30
 
+
 def normalize_url(href: str):
     """Return URL without scheme and leading www., keep path/query/fragment.
     Returns None if no href is provided."""
@@ -54,6 +55,7 @@ def normalize_url(href: str):
         cleaned = re.sub(r"^https?://(www\.)?", "", href).strip()
         return cleaned or None
 
+
 def extract_url_by_label(driver, label: str, timeout: int = TIMEOUT):
     """Return normalized href for the row whose label div has the given title.
     Example labels: 'URL', 'Homepage'. Never use this for 'Other'.
@@ -66,7 +68,9 @@ def extract_url_by_label(driver, label: str, timeout: int = TIMEOUT):
             )
         )
         # If the UI explicitly shows a placeholder None, use it verbatim
-        placeholders = container.find_elements(By.XPATH, ".//span[contains(@class,'text-placeholder')]")
+        placeholders = container.find_elements(
+            By.XPATH, ".//span[contains(@class,'text-placeholder')]"
+        )
         for sp in placeholders:
             txt = sp.text.strip()
             if txt.lower() == "none":
@@ -81,6 +85,7 @@ def extract_url_by_label(driver, label: str, timeout: int = TIMEOUT):
         return None
     except Exception:
         return None
+
 
 def start_driver():
     try:
@@ -141,8 +146,9 @@ def extract_brand_name(driver):
         )
 
         # Case 1: explicit None placeholder (not branded)
-        placeholders = brand_row.find_elements(By.XPATH, 
-            ".//span[contains(@class,'text-placeholder')]")
+        placeholders = brand_row.find_elements(
+            By.XPATH, ".//span[contains(@class,'text-placeholder')]"
+        )
         for sp in placeholders:
             if sp.text.strip().lower() == "none":
                 return "None"
@@ -253,10 +259,12 @@ def extract_poi_name_prior(driver):
         return prior_name_text
     except Exception:
         return "", ""
-    
+
+
 def extract_ow_url_prior(driver):
     """POI OW URL prior to Brand Application (normalized, no scheme/www).
-    Prefer 'URL' then 'Homepage'. If a 'None' placeholder is present, returns the literal 'None'. Returns None when absent."""
+    Prefer 'URL' then 'Homepage'. If a 'None' placeholder is present, returns the literal 'None'. Returns None when absent.
+    """
     href = extract_url_by_label(driver, "URL", timeout=TIMEOUT)
     if href is not None:
         return href
@@ -265,9 +273,11 @@ def extract_ow_url_prior(driver):
         return href
     return None
 
+
 def extract_ow_url_at_brand(driver):
     """URL at the version where Brand is applied (normalized).
-    Prefer 'Homepage' then 'URL'. If a 'None' placeholder is present, returns the literal 'None'. Returns None when absent."""
+    Prefer 'Homepage' then 'URL'. If a 'None' placeholder is present, returns the literal 'None'. Returns None when absent.
+    """
     href = extract_url_by_label(driver, "Homepage", timeout=TIMEOUT)
     if href is not None:
         return href
@@ -276,10 +286,12 @@ def extract_ow_url_at_brand(driver):
         return href
     return None
 
+
 # ------------ choose 1 of the following fields
 #  brand, name, url, phone_number, presence_period, is_blessed, geocode, category, relationship, address,
 #  hours_period, icon_custom_id, structured_attributes.is_apple_pay_supported, associated_app, vendor_geometry_id, vendor_geometry_id,
 #  vendor_contrivution, indoor, message_profile
+
 
 def choose_field(driver):
     dropdown_trigger_xpath = (
