@@ -12,6 +12,9 @@ After entering Versions:
         Check if Cureated POI Parents is applied
             move to next version
               Once identified:
+              * Use all fields to check previous dated version
+              if parent present then iterate till its not
+              Save last instance of parent presence
                 Obtain the following:
                     - Curated POI Parent
                     - What Applied Parent badge? (Source)
