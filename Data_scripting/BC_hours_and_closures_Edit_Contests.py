@@ -1,15 +1,24 @@
 """
-    LOGIC:
-        place details page
-            -versions 
-                - grab present Hours or Show In Client Badge
-                - filter by Hours or Show In Client depending on column header (Contested Field Column)
-                - grab hours/show in client badge at edit (prior to 7/25)
-                - grab edit date
-                - in todos page click first visible item and scrape source level 2 "str (str)"
-                - if edited badge -> open and read json( RCA indicator )
+BC_hours_and_closures_Edit_Contests.py
+
+GOAL (high-level):
+    Scrape, for each POI details page:
+        - The "present" badge for either Hours or Show In Client (Presence),
+        - The "edited" badge from the selected Version prior to a threshold date,
+        - The edit date for that chosen version,
+        - The ToDos leading title (source level 2) by clicking the first visible item,
+        - (RCA is currently disabled in this file for speed; see edited_json_notes.py for notes-only flow).
+
+DESIGN NOTES (mirrors matching_and_brand_tagging.py):
+    - Keep helpers minimal and deterministic (no background state).
+    - Straight-line orchestration from details → versions → filter → version selection → scrape → todos.
+    - Use explicit waits where the UI is known to render (tabs, labels, ids).
+    - Keep parsing lightweight and robust to minor UI variations.
+
+TUNABLES:
+    - PATH points to the "release" details page so we land directly on the POI console.
+    - THRESHOLD picks the latest version strictly prior to this date, else we fall back to earliest.
 """
-                #- identify hours mismatch severity (follow the rules in “Other info" tab
 
 import csv
 import sys
@@ -26,26 +35,35 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import html
 
-RED = "\033[91m"  # errors
+# ---- Console colors for easy scanning in Terminal output
+RED = "\033[91m"    # errors
 GREEN = "\033[92m"  # notes
-YELLOW = "\033[93m"  # warnings
-MAGENTA = "\033[95m"  # end of each loop iteration warning to verify
+YELLOW = "\033[93m" # warnings / non-fatal issues
+MAGENTA = "\033[95m"# debug or step markers
 RESET = "\033[0m"
 
 def _dbg(msg):
+    """Minimal timestamped logger for ad-hoc debugging."""
     ts = datetime.now().strftime("%H:%M:%S")
     print(f"{MAGENTA}[{ts}] {msg}{RESET}")
 
+# ---- Paths & constants
 PATH = "https://apollo.geo.apple.com/p/release/"
 INPUT_CSV = "Data_scripting/BC_Hours_and_Closures_Edit_Contests.csv"
 OUTPUT_CSV = "BC_hours_&_closures_output.csv"
 
 TIMEOUT = 30
-THRESHOLD = datetime(2025, 7, 25)
+THRESHOLD = datetime(2025, 7, 25)  # pick version strictly prior to this date
 
 
-
+# =============================================================================
+# Driver bootstrap
+# =============================================================================
 def start_driver():
+    """
+    Start Safari WebDriver with sane defaults. This mirrors the approach used
+    in your brand script: try to gracefully handle common safaridriver issues.
+    """
     try:
         print("Initializing Safari webdriver...")
         driver = webdriver.Safari()
@@ -64,6 +82,7 @@ def start_driver():
         traceback.print_exc()
         sys.exit()
     except WebDriverException as ex:
+        # Common case where the service needs to be restarted
         try:
             print("Attempting to stop safaridriver service...")
             webdriver.Safari().service.stop()
@@ -88,9 +107,15 @@ def start_driver():
     return driver
 
 
-
-
+# =============================================================================
+# Tab navigation helpers
+# =============================================================================
 def click_versions_tab(driver):
+    """
+    Click the 'Versions' tab on the details page.
+    Also scrolls to top for consistent viewport and waits for
+    either version rows or the Choices dropdown to appear.
+    """
     WebDriverWait(driver, TIMEOUT).until(
         EC.element_to_be_clickable(
             (
@@ -105,9 +130,11 @@ def click_versions_tab(driver):
         pass
     wait_versions_ui(driver)
 
-# Helper: Wait until either the Versions list or field filter control is present
 def wait_versions_ui(driver):
-    """Wait until either the Versions list or the field filter control is present."""
+    """
+    Wait until either the Versions list (entry rows) or the field filter control
+    is present. This is a coarse 'ready' signal for the Versions subview.
+    """
     try:
         WebDriverWait(driver, TIMEOUT).until(
             lambda d: d.find_elements(By.CSS_SELECTOR, "a[id^='entry-']") or
@@ -118,8 +145,8 @@ def wait_versions_ui(driver):
 
 def ensure_versions_open(driver):
     """
-    Ensure we're on the Versions page before interacting with filters.
-    If the Versions tab isn't active, click it and wait for the UI to render.
+    Idempotent opener: if the 'Versions' tab is already active, only wait for the
+    subview to render; otherwise click into it.
     """
     try:
         active = driver.find_elements(
@@ -134,6 +161,10 @@ def ensure_versions_open(driver):
     click_versions_tab(driver)
 
 def click_todos_tab(driver):
+    """
+    Click the 'ToDos' tab (robust to minor label variants), then wait until either a
+    summary title or at least one thread item is visible.
+    """
     WebDriverWait(driver, TIMEOUT).until(
         EC.element_to_be_clickable(
             (By.XPATH, "//a[contains(@class,'nav-link') and (normalize-space()='ToDos' or normalize-space()='Todos' or normalize-space()='To-Do')]")
@@ -145,7 +176,19 @@ def click_todos_tab(driver):
         )
     )
 
+
+# =============================================================================
+# ToDos helpers
+# =============================================================================
 def todo_source_lvl_2(driver) -> str:
+    """
+    Extract the leading 'str (str)' portion from the ToDo details title.
+
+    Strategy:
+        1) If a details title is already visible, read it directly.
+        2) Otherwise click the first visible thread item, then read the title.
+        3) Return only the 'Level 2' prefix such as: "POI Change Details (Unspecified)".
+    """
     def _title_to_lvl2(title_txt: str) -> str:
         if not title_txt:
             return ""
@@ -158,6 +201,7 @@ def todo_source_lvl_2(driver) -> str:
     except Exception:
         return ""
 
+    # 1) Try existing summary title
     for sel in ("[data-test-id='todo-summary__todo-title']",
                 "[data-test-id='todo-summary_todo-title']",
                 ".todo-summary .section-header",
@@ -170,6 +214,7 @@ def todo_source_lvl_2(driver) -> str:
         except NoSuchElementException:
             continue
 
+    # 2) Click first visible thread item
     for sel in (".view-place-todos__todo-list [data-test-id='thread-item']",
                 ".view-place-todos__todo-list .thread__item",
                 "[data-test-id='thread-item']",
@@ -187,6 +232,7 @@ def todo_source_lvl_2(driver) -> str:
                     pass
             break
 
+    # 3) Re-try reading a title after click
     for sel in ("[data-test-id='todo-summary__todo-title']",
                 "[data-test-id='todo-summary_todo-title']",
                 ".todo-summary .section-header",
@@ -201,7 +247,15 @@ def todo_source_lvl_2(driver) -> str:
 
     return ""
 
+
+# =============================================================================
+# Field/badge helpers
+# =============================================================================
 def get_present_badge(driver, contested_field=None) -> str:
+    """
+    Read the 'present' state badge for either Hours or Show In Client on the details page.
+    This is captured before we switch to Versions.
+    """
     want_hours = (contested_field or "").strip().lower() == "hours"
     label_title = "Hours" if want_hours else "Show In Client"
     try:
@@ -220,6 +274,10 @@ def get_present_badge(driver, contested_field=None) -> str:
         return ""
 
 def hours_or_show_client_badge(driver, contested_field=None) -> dict:
+    """
+    On the currently selected version, read the edited badge text for either Hours or Show In Client.
+    Returns a dict with a 'mode' and one of 'hours_edit_badge' or 'sic_edit_badge' populated.
+    """
     want_hours = (contested_field or "").strip().lower() == "hours"
     title = "Hours" if want_hours else "Show In Client"
     try:
@@ -242,8 +300,12 @@ def hours_or_show_client_badge(driver, contested_field=None) -> dict:
 
 def choose_field(driver, filter_key: str) -> bool:
     """
-    Open the Choices.js dropdown and select option by data-value (reference-style).
-    filter_key ∈ {'hours_period', 'presence_period'}
+    Select the Versions subview filter (Choices.js) by its data-value.
+    Valid keys:
+        - 'hours_period'     (Hours)
+        - 'presence_period'  (Show In Client / Closures)
+    Returns:
+        True on success, False if the control could not be clicked (non-fatal).
     """
     dropdown_trigger_xpath = "//div[contains(@class,'choices__item--selectable') and @data-value='none']"
     try:
@@ -266,9 +328,11 @@ def choose_field(driver, filter_key: str) -> bool:
         return False
 
 
-
 def collect_versions(driver):
-    """Return sorted list of (datetime, entry_id) ascending (oldest → newest)."""
+    """
+    Return all version entries as (datetime, entry_id), sorted ascending (oldest → newest).
+    The date text is assumed to be like: 'YYYY-MM-DD hh:mm AM/PM TZ'
+    """
     wait = WebDriverWait(driver, TIMEOUT)
     try:
         wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "a[id^='entry-']")))
@@ -286,27 +350,49 @@ def collect_versions(driver):
     return sorted(entries, key=lambda x: x[0])
 
 def click_version(driver, entry_id):
+    """
+    Select a version row by its anchor id (e.g., 'entry-...').
+    After clicking, we wait for both 'Show In Client' and 'Hours' blocks to render.
+    """
     wait = WebDriverWait(driver, TIMEOUT)
     wait.until(EC.element_to_be_clickable((By.ID, entry_id))).click()
     wait.until(EC.presence_of_element_located((By.XPATH, "//div[@title='Show In Client']")))
     wait.until(EC.presence_of_element_located((By.XPATH, "//div[@title='Hours']")))
 
 
+# =============================================================================
+# Orchestrator
+# =============================================================================
 def find_change_version(place_id, driver, contested_field=None):
+    """
+    Main single-POI routine:
+        1) Load details
+        2) Capture 'present_badge' for the contested field (Hours or Show In Client)
+        3) Versions tab → apply filter matching the contested field
+        4) Collect versions and pick latest strictly before THRESHOLD (else earliest)
+        5) Open that version and read its edited badge
+        6) Switch to ToDos and read "source level 2" title prefix
+    Returns a result dict ready for CSV.
+    """
     print(f"🔄 Processing place_id={place_id}")
+
+    # 1) go to details page, wait for the shell (Versions tab link) to be present
     driver.get(PATH + place_id)
     WebDriverWait(driver, TIMEOUT).until(
         EC.presence_of_element_located((By.XPATH, "//a[contains(@class,'nav-link') and normalize-space()='Versions']"))
     )
 
+    # 2) present badge on details page (fast read)
     present_badge = get_present_badge(driver, contested_field) or ""
 
+    # 3) Versions + filter selection
     click_versions_tab(driver)
     norm_cf = (contested_field or "").strip().lower()
     filter_key = "hours_period" if norm_cf == "hours" else "presence_period"
     if not choose_field(driver, filter_key):
         print(f"{YELLOW}[filter] continuing without filter{RESET}")
 
+    # 4) all versions (ascending) → pick the one < THRESHOLD (else earliest)
     versions = collect_versions(driver)
     if not versions:
         return {"place_id": place_id, "edited_at": "", "present_badge": present_badge,
@@ -320,16 +406,20 @@ def find_change_version(place_id, driver, contested_field=None):
         chosen = versions[0]
     prior_dt, prior_id = chosen
 
+    # 5) open chosen version and read the edited badge under the relevant block
     click_version(driver, prior_id)
-
     scraped = hours_or_show_client_badge(driver, contested_field)
     mode = scraped.get("mode")
     edited_badge = scraped.get("hours_edit_badge", "") if mode == "Hours" else scraped.get("sic_edit_badge", "")
 
+    # Format 'edited_at' in M/D/YYYY like your other outputs
     edited_at_str = f"{prior_dt.month}/{prior_dt.day}/{prior_dt.year}" if isinstance(prior_dt, datetime) else str(prior_dt)
 
+    # 6) ToDos → read L2 source title prefix
     source_lvl_2 = todo_source_lvl_2(driver) or ""
-    rca_indicator = ""  # disabled
+
+    # RCA intentionally disabled here (keep fast). See edited_json_notes.py for focused notes scraping.
+    rca_indicator = ""
 
     return {
         "place_id": place_id,
@@ -341,6 +431,9 @@ def find_change_version(place_id, driver, contested_field=None):
     }
 
 
+# =============================================================================
+# Entry point
+# =============================================================================
 if __name__ == "__main__":
     driver = start_driver()
 
@@ -360,8 +453,10 @@ if __name__ == "__main__":
 
         with open(INPUT_CSV, newline="", encoding="utf-8") as in_f:
             reader = csv.DictReader(in_f)
+            # Normalize possible BOM + whitespace in header names
             reader.fieldnames = [fn.lstrip("\ufeff").strip() for fn in reader.fieldnames]
             for row in reader:
+                # ---- Robust Place ID cleanup (handles "<br>" and HTML entities)
                 pid_raw = (row.get("Place ID", "") or "").strip()
                 pid_unescaped = html.unescape(pid_raw)
                 pid_no_tags = re.sub(r"<[^>]*>", "", pid_unescaped).strip()
@@ -370,7 +465,8 @@ if __name__ == "__main__":
                 if not pid:
                     print("❗ Missing Place ID; skipping.")
                     continue
-                
+
+                # The sheet may call this "Contested Field" or "Contested Field Column"
                 contested_field = (row.get("Contested Field", "") or row.get("Contested Field Column", "") or "").strip()
                 print(f"\n=== Processing {pid} ===")
                 try:
