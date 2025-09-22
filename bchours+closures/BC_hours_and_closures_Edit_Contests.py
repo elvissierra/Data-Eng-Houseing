@@ -47,30 +47,9 @@ def _dbg(msg):
     ts = datetime.now().strftime("%H:%M:%S")
     print(f"{MAGENTA}[{ts}] {msg}{RESET}")
 
-def _dbe(msg, e=None):
-    """Error logger with exception class & message."""
-    ts = datetime.now().strftime("%H:%M:%S")
-    if e is None:
-        print(f"{RED}[{ts}] {msg}{RESET}")
-    else:
-        et = type(e).__name__
-        print(f"{RED}[{ts}] {msg} | {et}: {e}{RESET}")
-
-def _snap(driver, note=""):
-    """Quick context snapshot: current URL and readyState."""
-    try:
-        url = driver.current_url
-    except Exception:
-        url = "<no current_url>"
-    try:
-        rs = driver.execute_script("return document.readyState")
-    except Exception:
-        rs = "<no readyState>"
-    _dbg(f"SNAP {note} → url={url} readyState={rs}")
-
 # ---- Paths & constants
 PATH = "https://apollo.geo.apple.com/p/release/"
-INPUT_CSV = "BC_Hours_and_Closures_Edit_Contests.csv"
+INPUT_CSV = "Data_scripting/BC_Hours_and_Closures_Edit_Contests.csv"
 OUTPUT_CSV = "BC_hours_&_closures_output.csv"
 
 TIMEOUT = 30
@@ -319,37 +298,6 @@ def hours_or_show_client_badge(driver, contested_field=None) -> dict:
         return {"mode": "Hours" if want_hours else "Closures", "hours_edit_badge" if want_hours else "sic_edit_badge": ""}
 
 
-# --- Added: Extract Brand Applier Version Header
-def extract_brand_applier_vheader(driver):
-    """What Applied Brand (Version Header) - Returns only the relevant header texts."""
-    try:
-        selected_row = WebDriverWait(driver, TIMEOUT).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "tr.selected-row"))
-        )
-        tds = selected_row.find_elements(By.CSS_SELECTOR, "td.collapsed-column")
-        header_texts = []
-        for td in tds:
-            if td.find_elements(By.TAG_NAME, "input"):
-                continue
-            text = td.text.strip()
-            if text:
-                header_texts.append(text)
-        filtered = [
-            t
-            for t in header_texts
-            if not any(s in t for s in ["AM", "PM", "CDT", "UTC", "GMT"])
-            and not t.replace(".", "")
-            .replace("-", "")
-            .replace("(", "")
-            .replace(")", "")
-            .replace(" ", "")
-            .isdigit()
-        ]
-        return filtered
-    except Exception:
-        return []
-
-
 def choose_field(driver, filter_key: str) -> bool:
     """
     Select the Versions subview filter (Choices.js) by its data-value.
@@ -427,39 +375,26 @@ def find_change_version(place_id, driver, contested_field=None):
     Returns a result dict ready for CSV.
     """
     print(f"🔄 Processing place_id={place_id}")
-    _dbg(f"contested_field={contested_field!r}")
 
     # 1) go to details page, wait for the shell (Versions tab link) to be present
-    try:
-        driver.get(PATH + place_id)
-        _snap(driver, "after GET details")
-        WebDriverWait(driver, TIMEOUT).until(
-            EC.presence_of_element_located((By.XPATH, "//a[contains(@class,'nav-link') and normalize-space()='Versions']"))
-        )
-        _dbg("details shell present (Versions tab visible)")
-    except Exception as e:
-        _dbe("failed to load details shell", e)
-        raise
+    driver.get(PATH + place_id)
+    WebDriverWait(driver, TIMEOUT).until(
+        EC.presence_of_element_located((By.XPATH, "//a[contains(@class,'nav-link') and normalize-space()='Versions']"))
+    )
 
     # 2) present badge on details page (fast read)
     present_badge = get_present_badge(driver, contested_field) or ""
-    _dbg(f"present_badge={present_badge!r}")
 
     # 3) Versions + filter selection
     click_versions_tab(driver)
-    _snap(driver, "after click Versions")
     norm_cf = (contested_field or "").strip().lower()
     filter_key = "hours_period" if norm_cf == "hours" else "presence_period"
-    bool_res = choose_field(driver, filter_key)
-    if not bool_res:
+    if not choose_field(driver, filter_key):
         print(f"{YELLOW}[filter] continuing without filter{RESET}")
-    _dbg(f"filter_key={filter_key} (applied={bool_res})")
 
     # 4) all versions (ascending) → pick the one < THRESHOLD (else earliest)
     versions = collect_versions(driver)
-    _dbg(f"versions_count={len(versions)}")
     if not versions:
-        _dbe("no versions found on Versions tab")
         return {"place_id": place_id, "edited_at": "", "present_badge": present_badge,
                 "show_client_edited_badge": "", "todo_source_lvl_2": "", "rca_indicator": ""}
 
@@ -470,13 +405,9 @@ def find_change_version(place_id, driver, contested_field=None):
     if chosen is None:
         chosen = versions[0]
     prior_dt, prior_id = chosen
-    _dbg(f"chosen_version id={prior_id} dt={prior_dt}")
 
     # 5) open chosen version and read the edited badge under the relevant block
     click_version(driver, prior_id)
-    _snap(driver, "after click chosen version")
-    # Extract the Version Header from the chosen (pre-threshold) version
-    version_header = extract_brand_applier_vheader(driver)
     scraped = hours_or_show_client_badge(driver, contested_field)
     mode = scraped.get("mode")
     edited_badge = scraped.get("hours_edit_badge", "") if mode == "Hours" else scraped.get("sic_edit_badge", "")
@@ -484,13 +415,8 @@ def find_change_version(place_id, driver, contested_field=None):
     # Format 'edited_at' in M/D/YYYY like your other outputs
     edited_at_str = f"{prior_dt.month}/{prior_dt.day}/{prior_dt.year}" if isinstance(prior_dt, datetime) else str(prior_dt)
 
-    _dbg(f"version_header={version_header}")
-    _dbg(f"edited_badge={edited_badge!r}")
-    _dbg(f"edited_at={edited_at_str}")
-
     # 6) ToDos → read L2 source title prefix
     source_lvl_2 = todo_source_lvl_2(driver) or ""
-    _dbg(f"todo_source_lvl_2={source_lvl_2!r}")
 
     # RCA intentionally disabled here (keep fast). See edited_json_notes.py for focused notes scraping.
     rca_indicator = ""
@@ -498,7 +424,6 @@ def find_change_version(place_id, driver, contested_field=None):
     return {
         "place_id": place_id,
         "edited_at": edited_at_str,
-        "version_header": version_header,
         "present_badge": present_badge,
         "show_client_edited_badge": edited_badge,
         "todo_source_lvl_2": source_lvl_2,
@@ -518,7 +443,6 @@ if __name__ == "__main__":
             fieldnames=[
                 "place_id",
                 "edited_at",
-                "version_header",
                 "present_badge",
                 "show_client_edited_badge",
                 "todo_source_lvl_2",
@@ -538,7 +462,6 @@ if __name__ == "__main__":
                 pid_no_tags = re.sub(r"<[^>]*>", "", pid_unescaped).strip()
                 m = re.search(r"\d+", pid_no_tags)
                 pid = m.group(0) if m else ""
-                _dbg(f"row Place ID raw={pid_raw!r} → parsed pid={pid!r}")
                 if not pid:
                     print("❗ Missing Place ID; skipping.")
                     continue
@@ -549,9 +472,7 @@ if __name__ == "__main__":
                 try:
                     result = find_change_version(pid, driver, contested_field=contested_field)
                 except Exception as e:
-                    _dbe("Error in find_change_version", e)
-                    import traceback as _tb
-                    print(_tb.format_exc())
+                    print(f"{RED}❌ Error in find_change_version for {pid}: {e}{RESET}")
                     result = {"place_id": pid, "edited_at": "", "present_badge": "", "show_client_edited_badge": "", "todo_source_lvl_2": "", "rca_indicator": ""}
                 print(f"→ Result: {json.dumps(result)}")
                 writer.writerow(result)
