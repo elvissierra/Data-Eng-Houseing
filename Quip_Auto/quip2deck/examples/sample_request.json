@@ -1,0 +1,4 @@
+{
+  "html": "<!doctype html>\n<html><body>\n<h1>Project Apollo</h1>\n<p>Executive overview of the quarter.</p>\n<ul>\n  <li>Hit ARR target</li>\n  <li>Reduce churn</li>\n  <li>Ship v2</li>\n</ul>\n\n<h2>KPIs</h2>\n<p>NPS improved to 72. Uptime at 99.95%.</p>\n<ul>\n  <li>North America: $3.1M ARR</li>\n  <li>Europe: $1.9M ARR</li>\n</ul>\n\n<h2>Roadmap</h2>\n<p>Q4 priorities:</p>\n<ul>\n  <li>Onboarding revamp</li>\n  <li>Billing reliability</li>\n  <li>Observability</li>\n</ul>\n</body></html>\n",
+  "out_path": "out/sample_apollo.pptx"
+}

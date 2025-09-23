@@ -1,0 +1,58 @@
+# --- OS / Editor ---
+.DS_Store
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual envs
+.venv/
+venv/
+env/
+.conda/
+.quip_auto/
+
+# Packaging / build
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Caches / tooling
+.pytest_cache/
+.mypy_cache/
+.cache/
+.coverage
+.coverage.*
+htmlcov/
+.pyright/
+
+# Logs
+*.log
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# App output
+out/
+
+# --- FastAPI / Uvicorn ---
+# (nothing specific; logs covered above)
+
+# --- Node (if you add a frontend later) ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-lock.yaml

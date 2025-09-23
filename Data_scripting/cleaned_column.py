@@ -4,8 +4,8 @@ import sys
 import pandas as pd
 import re
 
-# to run -> python3 cleaned_column.py -i Untitled.csv -c this -o Untitled_output.csv
-
+# to run -> python3 cleaned_column.py -i Untitled.csv -c column_header -o Untitled_output.csv
+# python3 cleaned_column].py -i BC_Hours_and_Closures_Edit_Contests.csv -c Version Header Prior to 7/25 -o system_reversions_output.csv
 
 def clean_markings(s: str) -> str:
     """

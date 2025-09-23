@@ -1,0 +1,27 @@
+from pydantic import BaseModel, Field
+from typing import List, Optional, Literal, Union, Dict
+
+class ImageSpec(BaseModel):
+    path: str
+    alt: Optional[str] = None
+
+class TableSpec(BaseModel):
+    rows: List[List[str]]
+
+class Slide(BaseModel):
+    layout: Literal["title", "content"] = "content"
+    title: Optional[str] = None
+    bullets: Optional[List[str]] = None
+    paragraphs: Optional[List[str]] = None
+    image: Optional[ImageSpec] = None
+    table: Optional[TableSpec] = None
+    notes: Optional[str] = None
+
+class SlidePlan(BaseModel):
+    meta: Dict[str, str] = Field(default_factory=dict)
+    slides: List[Slide]
+
+class ConvertRequest(BaseModel):
+    html: str
+    out_path: Optional[str] = None
+    theme: Optional[str] = "Default"
