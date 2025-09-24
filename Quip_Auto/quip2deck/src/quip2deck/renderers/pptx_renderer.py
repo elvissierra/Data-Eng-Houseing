@@ -1,229 +1,163 @@
+
 from pptx import Presentation
 from pptx.util import Inches, Pt
-from pptx.enum.text import PP_ALIGN
+from pptx.chart.data import CategoryChartData
+from pptx.enum.chart import XL_CHART_TYPE, XL_DATA_LABEL_POSITION, XL_LEGEND_POSITION
 from quip2deck.models import SlidePlan
-from quip2deck.theming.theme import DEFAULT_THEME
 from quip2deck.utils.files import ensure_parent
-from datetime import datetime
+
+from typing import List, Tuple
+
+
+# Textual index helper for chart data
+def _add_chart_index_box(slide, items: List[Tuple[str, float]], left, top, width, height, show_pct: bool = True):
+    if not items:
+        return None
+    box = slide.shapes.add_textbox(left, top, width, height)
+    tf = box.text_frame
+    tf.clear()
+    total = sum(v for (_l, v) in items)
+    for i, (lbl, val) in enumerate(items):
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        pct_txt = f" ({val/total:.0%})" if (show_pct and total > 0) else ""
+        p.text = f"{lbl} — {int(val) if float(val).is_integer() else val}{pct_txt}"
+        p.level = 0
+        try:
+            for r in p.runs:
+                r.font.size = Pt(12)
+        except Exception:
+            pass
+    return box
+
+
 
 def render_pptx(plan: SlidePlan, out_path: str) -> str:
-    ensure_parent(out_path)
-    prs = Presentation()  # default template
-    theme = DEFAULT_THEME
-
-    # Title slide
-    first = True
-    for s in plan.slides:
-        if s.layout == "title":
-            layout = prs.slide_layouts[0]  # title
-            slide = prs.slides.add_slide(layout)
-            slide.shapes.title.text = s.title or plan.meta.get("title","Deck")
-            if slide.placeholders and len(slide.placeholders) > 1:
-                slide.placeholders[1].text = plan.meta.get("subtitle","")
-            first = False
-        else:
-            # Title & Content
-            layout = prs.slide_layouts[1]
-            slide = prs.slides.add_slide(layout)
-            if slide.shapes.title:
-                slide.shapes.title.text = s.title or ""
-            body = slide.placeholders[1].text_frame
-            body.clear()
-
-            # paragraphs then bullets
-            if s.paragraphs:
-                for ptxt in s.paragraphs:
-                    p = body.add_paragraph() if body.text else body.paragraphs[0]
-                    p.text = ptxt
-                    p.level = 0
-            if s.bullets:
-                for b in s.bullets:
-                    p = body.add_paragraph()
-                    p.text = b
-                    p.level = 0
-
-    prs.save(out_path)
-    return out_path
-
-# === Proof -> PPTX renderer ====================================================
-
-def render_proof_pptx(proof: dict, out_path: str) -> str:
-    """Render a deck from a JSON-like proof object.
-    Expected keys: run_id, meta{source_doc, generated_at}, sections[{id,title,type,data,...}]
-    """
+    """Minimal PPTX renderer: Title & Content layout, bullets left, chart right."""
     ensure_parent(out_path)
     prs = Presentation()
+    # Normalize to 16:9 so charts aren’t off-canvas in Keynote
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
 
-    _proof_title_slide(prs, proof)
+    for s in plan.slides:
+        if s.layout == "title":
+            slide = prs.slides.add_slide(prs.slide_layouts[0])
+            if slide.shapes.title:
+                slide.shapes.title.text = s.title or plan.meta.get("title", "Deck")
+                # slightly larger title
+                try:
+                    for p in slide.shapes.title.text_frame.paragraphs:
+                        for r in p.runs:
+                            r.font.size = Pt(60)
+                except Exception:
+                    pass
+            if len(slide.placeholders) > 1 and s.subtitle:
+                slide.placeholders[1].text = s.subtitle
+            continue
 
-    for section in proof.get("sections", []):
-        stype = section.get("type")
-        if stype == "category_counts":
-            _slide_category_counts(prs, section, proof)
-        elif stype == "top_list":
-            _slide_top_list(prs, section, proof)
-        elif stype == "events":
-            _slide_events_table(prs, section, proof)
-        elif stype == "date_counts":
-            _slide_date_counts(prs, section, proof)
-        else:
-            _slide_fallback(prs, section, proof)
+        # Content slide
+        slide = prs.slides.add_slide(prs.slide_layouts[1])  # Title & Content
+        if slide.shapes.title:
+            slide.shapes.title.text = s.title or ""
+            try:
+                for p in slide.shapes.title.text_frame.paragraphs:
+                    for r in p.runs:
+                        r.font.size = Pt(56)
+            except Exception:
+                pass
+
+        # Optional subtitle: use the body placeholder's first paragraph prefix
+        body = slide.placeholders[1].text_frame
+        body.clear()
+        if s.subtitle:
+            body.text = s.subtitle
+            body.paragraphs[0].font.size = Pt(24)
+            # add a spacer paragraph
+            body.add_paragraph().text = ""
+
+        # Paragraphs then bullets
+        first = (len(body.paragraphs) == 0) or (body.paragraphs[0].text == "")
+        if s.paragraphs:
+            for ptxt in s.paragraphs:
+                p = body.paragraphs[0] if first else body.add_paragraph(); first = False
+                p.text = ptxt; p.level = 0
+        if s.bullets:
+            for b in s.bullets:
+                p = body.paragraphs[0] if first else body.add_paragraph(); first = False
+                p.text = b; p.level = 0
+                # bump list font size a bit
+                try:
+                    for r in p.runs: r.font.size = Pt(34)
+                except Exception:
+                    pass
+
+        # Optional chart on the right
+        if getattr(s, "chart", None) and s.chart and s.chart.data:
+            cdata = CategoryChartData()
+            cdata.categories = [lbl for (lbl, _v) in s.chart.data]
+            cdata.add_series("", [v for (_lbl, v) in s.chart.data])
+            # right-side placement tuned to 16:9
+            slide_w = prs.slide_width
+            slide_h = prs.slide_height
+            margin = Inches(0.6)
+            chart_size = min(Inches(4.2), slide_h - Inches(3.0))  # safe square
+            left = slide_w - chart_size - margin
+            if left < Inches(0.5):
+                # shrink chart to preserve a 0.5" left margin (prevents off-canvas after Keynote reflow)
+                overflow = Inches(0.5) - left
+                chart_size = max(Inches(3.2), chart_size - overflow)
+                left = slide_w - chart_size - margin
+                width = chart_size
+                height = chart_size
+            top = Inches(2.1)
+            width = chart_size
+            height = chart_size
+            ctype = XL_CHART_TYPE.COLUMN_CLUSTERED
+            if s.chart.type == "bar":
+                ctype = XL_CHART_TYPE.BAR_CLUSTERED
+            elif s.chart.type == "line":
+                ctype = XL_CHART_TYPE.LINE
+            elif s.chart.type == "pie":
+                ctype = XL_CHART_TYPE.PIE
+            chart = slide.shapes.add_chart(ctype, left, top, width, height, cdata).chart
+
+            try:
+                if s.chart.type == "pie":
+                    chart.has_legend = False
+                    plot = chart.plots[0]
+                    plot.has_data_labels = True
+                    d = plot.data_labels
+                    d.show_percentage = True
+                    d.number_format = "0%"
+                    try:
+                        d.position = XL_DATA_LABEL_POSITION.OUTSIDE_END
+                    except Exception:
+                        pass
+                else:
+                    for series in chart.series:
+                        series.has_data_labels = True
+                        series.data_labels.show_value = True
+                        series.data_labels.font.size = Pt(12)
+            except Exception:
+                pass
+
+            # Textual index listing counts (and % for pies)
+            try:
+                idx_left = left
+                idx_top = top + height + Inches(0.1)
+                idx_width = width
+                idx_height = Inches(1.0)
+                _add_chart_index_box(
+                    slide,
+                    s.chart.data,
+                    idx_left,
+                    idx_top,
+                    idx_width,
+                    idx_height,
+                    show_pct=(s.chart.type == "pie"),
+                )
+            except Exception:
+                pass
 
     prs.save(out_path)
     return out_path
-
-
-def _footnote_text(proof: dict) -> str:
-    src = (proof.get("meta", {}) or {}).get("source_doc", "")
-    run_id = proof.get("run_id") or (proof.get("meta", {}) or {}).get("generated_at", "")
-    parts = []
-    if src:
-        parts.append(f"Source: {src}")
-    if run_id:
-        parts.append(f"Run: {run_id}")
-    return " \u2022 ".join(parts)
-
-
-def _proof_title_slide(prs: Presentation, proof: dict) -> None:
-    layout = prs.slide_layouts[0]
-    slide = prs.slides.add_slide(layout)
-    title = slide.shapes.title
-    subtitle = slide.placeholders[1] if len(slide.placeholders) > 1 else None
-    title.text = (proof.get("meta", {}) or {}).get("title", "Analysis Summary")
-    subtxt = []
-    if proof.get("meta", {}).get("source_doc"):
-        subtxt.append(f"Source: {proof['meta']['source_doc']}")
-    if proof.get("meta", {}).get("generated_at"):
-        subtxt.append(f"Generated: {proof['meta']['generated_at']}")
-    if proof.get("run_id"):
-        subtxt.append(f"Run: {proof['run_id']}")
-    if subtitle is not None:
-        subtitle.text = " \u2022 ".join(subtxt)
-
-
-def _new_title_content_slide(prs: Presentation, title_text: str):
-    layout = prs.slide_layouts[1]  # Title & Content
-    slide = prs.slides.add_slide(layout)
-    if slide.shapes.title:
-        slide.shapes.title.text = title_text or ""
-    body = slide.placeholders[1].text_frame
-    body.clear()
-    return slide, body
-
-
-def _slide_category_counts(prs: Presentation, section: dict, proof: dict) -> None:
-    # Render as bullets sorted desc by count
-    slide, body = _new_title_content_slide(prs, section.get("title", "Category Counts"))
-    data = section.get("data") or []
-    data = [d for d in data if d is not None]
-    data.sort(key=lambda x: x.get("count", 0), reverse=True)
-    if not data:
-        body.text = "No data"
-    else:
-        first = True
-        for row in data:
-            txt = f"{row.get('label','?')}: {row.get('count',0)}"
-            if first:
-                body.text = txt
-                first = False
-            else:
-                p = body.add_paragraph()
-                p.text = txt
-                p.level = 0
-    # footnote
-    left = Inches(0.5)
-    top = Inches(6.7)
-    width = Inches(9)
-    height = Inches(0.4)
-    tx = slide.shapes.add_textbox(left, top, width, height).text_frame
-    tx.text = _footnote_text(proof)
-    tx.paragraphs[0].font.size = Pt(10)
-
-
-def _slide_top_list(prs: Presentation, section: dict, proof: dict) -> None:
-    slide, body = _new_title_content_slide(prs, section.get("title", "Top List"))
-    data = section.get("data") or []
-    data.sort(key=lambda x: x.get("count", 0), reverse=True)
-    cap = 10
-    shown = data[:cap]
-    hidden = max(0, len(data) - cap)
-    if not shown:
-        body.text = "No data"
-    else:
-        first = True
-        for row in shown:
-            txt = f"{row.get('label','?')} — {row.get('count',0)}"
-            if first:
-                body.text = txt
-                first = False
-            else:
-                p = body.add_paragraph(); p.text = txt; p.level = 0
-        if hidden:
-            p = body.add_paragraph(); p.text = f"… and {hidden} more"; p.level = 0
-    tx = slide.shapes.add_textbox(Inches(0.5), Inches(6.7), Inches(9), Inches(0.4)).text_frame
-    tx.text = _footnote_text(proof); tx.paragraphs[0].font.size = Pt(10)
-
-
-def _slide_events_table(prs: Presentation, section: dict, proof: dict) -> None:
-    title = section.get("title", "Events")
-    layout = prs.slide_layouts[5] if len(prs.slide_layouts) > 5 else prs.slide_layouts[1]
-    slide = prs.slides.add_slide(layout)
-    if slide.shapes.title:
-        slide.shapes.title.text = title
-    rows = (section.get("data") or [])
-    # Build a simple 3-col table: ID | Flag | Date
-    cols = 3
-    row_count = max(1, len(rows) + 1)  # header + rows (at least header)
-    table_shape = slide.shapes.add_table(row_count, cols, Inches(0.5), Inches(1.8), Inches(9), Inches(4)).table
-    # headers
-    table_shape.cell(0,0).text = "ID"
-    table_shape.cell(0,1).text = "Flag"
-    table_shape.cell(0,2).text = "Date"
-    # rows
-    for i, r in enumerate(rows, start=1):
-        table_shape.cell(i,0).text = str(r.get("entity_id", r.get("id", "")))
-        table_shape.cell(i,1).text = str(r.get("flag", ""))
-        table_shape.cell(i,2).text = str(r.get("date", ""))
-    tx = slide.shapes.add_textbox(Inches(0.5), Inches(6.7), Inches(9), Inches(0.4)).text_frame
-    tx.text = _footnote_text(proof); tx.paragraphs[0].font.size = Pt(10)
-
-
-def _slide_date_counts(prs: Presentation, section: dict, proof: dict) -> None:
-    slide, body = _new_title_content_slide(prs, section.get("title", "Date Counts"))
-    data = section.get("data") or []
-    if not data:
-        body.text = "No data"
-    else:
-        # If sparse, show bullets; if dense, still bullets for now (charts can be added later)
-        first = True
-        for r in data[:20]:  # cap bullets to avoid overflow
-            txt = f"{r.get('date','?')}: {r.get('value',0)}"
-            if first:
-                body.text = txt; first = False
-            else:
-                p = body.add_paragraph(); p.text = txt; p.level = 0
-        if len(data) > 20:
-            p = body.add_paragraph(); p.text = f"… and {len(data)-20} more"; p.level = 0
-    # subtitle with range summary
-    summary = section.get("summary") or {}
-    min_d, max_d = summary.get("min"), summary.get("max")
-    if min_d or max_d:
-        sub = slide.placeholders[1]
-        try:
-            existing = sub.text_frame.paragraphs[0].text
-        except Exception:
-            existing = ""
-        sub.text = (existing + ("\n" if existing else "") + f"Range: {min_d or '?'} → {max_d or '?'}").strip()
-    tx = slide.shapes.add_textbox(Inches(0.5), Inches(6.7), Inches(9), Inches(0.4)).text_frame
-    tx.text = _footnote_text(proof); tx.paragraphs[0].font.size = Pt(10)
-
-
-def _slide_fallback(prs: Presentation, section: dict, proof: dict) -> None:
-    slide, body = _new_title_content_slide(prs, section.get("title", "Details"))
-    import json as _json
-    body.text = _json.dumps({k: v for k, v in section.items() if k != "data"}, indent=2)
-    # Show up to first 5 data rows as bullets for safety
-    for row in (section.get("data") or [])[:5]:
-        p = body.add_paragraph(); p.text = str(row); p.level = 0
-    tx = slide.shapes.add_textbox(Inches(0.5), Inches(6.7), Inches(9), Inches(0.4)).text_frame
-    tx.text = _footnote_text(proof); tx.paragraphs[0].font.size = Pt(10)

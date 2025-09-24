@@ -47,6 +47,9 @@ htmlcov/
 # App output
 out/
 
+# App examples
+examples/
+
 # --- FastAPI / Uvicorn ---
 # (nothing specific; logs covered above)
 

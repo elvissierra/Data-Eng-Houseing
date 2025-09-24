@@ -8,14 +8,23 @@ class ImageSpec(BaseModel):
 class TableSpec(BaseModel):
     rows: List[List[str]]
 
+
+# ChartSpec for numeric key-value pairs
+from typing import Literal
+class ChartSpec(BaseModel):
+    type: Literal["bar", "column", "line", "pie"] = "bar"
+    data: List[tuple[str, float]]  # (label, value)
+
 class Slide(BaseModel):
     layout: Literal["title", "content"] = "content"
     title: Optional[str] = None
+    subtitle: Optional[str] = None
     bullets: Optional[List[str]] = None
     paragraphs: Optional[List[str]] = None
     image: Optional[ImageSpec] = None
     table: Optional[TableSpec] = None
     notes: Optional[str] = None
+    chart: Optional[ChartSpec] = None
 
 class SlidePlan(BaseModel):
     meta: Dict[str, str] = Field(default_factory=dict)

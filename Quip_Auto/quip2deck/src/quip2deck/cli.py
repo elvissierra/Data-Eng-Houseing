@@ -1,6 +1,8 @@
+import inspect
 import json
 import typer
 from pathlib import Path
+import sys, traceback
 
 from quip2deck.parsers.quip_html import parse_html_to_ast
 from quip2deck.planner.outline import plan_slides
@@ -11,12 +13,45 @@ app = typer.Typer()
 
 @app.command()
 def convert(html_path: str, out_path: str = typer.Argument(None)):
-    html = Path(html_path).read_text(encoding="utf-8")
-    ast = parse_html_to_ast(html)
-    plan = plan_slides(ast)
-    out = out_path or default_output_path(Path(html_path).stem + ".pptx")
-    render_pptx(plan, out)
-    typer.echo(f"Wrote {out} ({len(plan.slides)} slides)")
+    try:
+        p = Path(html_path)
+        if not p.exists():
+            typer.echo(f"[error] HTML path not found: {p}")
+            raise SystemExit(2)
+
+        typer.echo(f"[info] CWD: {Path.cwd()}\n[info] Reading HTML: {p}")
+        html = p.read_text(encoding="utf-8")
+        ast = parse_html_to_ast(html)
+        typer.echo(f"[info] Parsed AST nodes: {len(ast)}")
+        plan = plan_slides(ast)
+
+        # Resolve output absolutely and ensure parent exists
+        raw_out = out_path or default_output_path(p.stem + ".pptx")
+        out_abs = Path(raw_out).expanduser().resolve()
+        out_abs.parent.mkdir(parents=True, exist_ok=True)
+        typer.echo(f"[info] Rendering PPTX → {out_abs}")
+
+        # Debug: confirm you're running THIS repo's renderer, not a stale install
+        try:
+            src_file = inspect.getsourcefile(render_pptx)
+            typer.echo(f"[debug] render_pptx from: {src_file}")
+        except Exception:
+            pass
+
+        render_pptx(plan, str(out_abs))
+
+        # Verify on-disk
+        if out_abs.exists():
+            size = out_abs.stat().st_size
+            typer.echo(f"[ok] Wrote {out_abs} ({len(plan.slides)} slides, {size} bytes)")
+        else:
+            typer.echo(f"[warn] Expected file not found after render: {out_abs}")
+            raise SystemExit(1)
+
+    except Exception:
+        typer.echo("[fatal] Conversion failed:")
+        traceback.print_exc()
+        raise SystemExit(1)
 
 @app.command()
 def proof2deck(proof_path: str, out_path: str = typer.Argument(None)):
@@ -40,6 +75,15 @@ def proof2deck(proof_path: str, out_path: str = typer.Argument(None)):
     out = out_path or default_output_path(Path(proof_path).stem + ".pptx")
     render_proof_pptx(proof, out)
     typer.echo(f"Wrote {out} (sections: {len(proof.get('sections', []))})")
+
+@app.callback(invoke_without_command=True)
+def main(ctx: typer.Context, html_path: str = typer.Argument(None), out_path: str = typer.Argument(None)):
+    """Convenience: allow `python -m quip2deck.cli file.html out.pptx` without `convert`."""
+    if ctx.invoked_subcommand is None:
+        if html_path is None:
+            typer.echo("Usage: convert <html_path> [out_path]")
+            raise SystemExit(2)
+        convert(html_path, out_path)  # type: ignore
 
 if __name__ == "__main__":
     app()
