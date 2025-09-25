@@ -265,90 +265,82 @@ def render_pptx(plan: SlidePlan, out_path: str) -> str:
         _colorize_textframe(body, FG_LIGHT)
 
         # Optional image (placed in the right column). If no chart, image uses the chart box.
-        img_shp = None
-        if getattr(s, "image", None) and s.image and s.image.path:
-            img_path = _resolve_image_path(plan, s.image.path)
-            if img_path is None or not img_path.exists():
-                # Add a small placeholder note so the user knows an image was referenced
-                slide_w = prs.slide_width
-                slide_h = prs.slide_height
-                margin = Inches(0.6)
-                box_size = min(Inches(4.2), slide_h - Inches(3.0))
-                left_box = slide_w - box_size - margin
-                top_box = Inches(2.1)
-                ph = slide.shapes.add_textbox(left_box, top_box, box_size, Inches(0.5)).text_frame
-                ph.text = (s.image.alt or "Image") + " (not available)"
+        # Collect images
+        img_shapes = []
+        imgs = s.images or ([s.image] if s.image else [])
+        if imgs:
+            resolved = []
+            missing = []
+            for im in imgs:
+                pth = _resolve_image_path(plan, im.path)
+                if pth and pth.exists():
+                    resolved.append((pth, im.alt or ""))
+                else:
+                    missing.append(im.alt or "Image")
+        
+            slide_w = prs.slide_width; slide_h = prs.slide_height
+            margin = Inches(0.6)
+            box_size = min(Inches(4.2), slide_h - Inches(3.0))
+            left_box = slide_w - box_size - margin
+            top_box  = Inches(2.1)
+            has_chart = bool(getattr(s, "chart", None) and s.chart and s.chart.data)
+        
+            if not has_chart:
+                if not resolved:
+                    tf = slide.shapes.add_textbox(left_box, top_box, box_size, Inches(0.6)).text_frame
+                    tf.text = "; ".join([m + " (not available)" for m in missing]) or "Image (not available)"
+                    _colorize_textframe(tf, FG_LIGHT)
+                else:
+                    n = len(resolved)
+                    cols = 2 if n >= 2 else 1
+                    rows = (n + cols - 1) // cols
+                    cell_w = box_size / cols
+                    cell_h = box_size / rows
+                    for idx, (img_path, alt) in enumerate(resolved):
+                        r, c = divmod(idx, cols)
+                        left = left_box + int(cell_w * c)
+                        top  = top_box  + int(cell_h * r)
+                        pic = slide.shapes.add_picture(str(img_path), left, top)
+                        scale = min(cell_w / pic.width, cell_h / pic.height, 1.0)
+                        pic.width  = int(pic.width  * scale)
+                        pic.height = int(pic.height * scale)
+                        pic.left = left + int((cell_w - pic.width) / 2)
+                        pic.top  = top  + int((cell_h - pic.height) / 2)
+                        img_shapes.append(pic)
+            else:
+                gap = Inches(0.15)
+                thumb_top = top_box + box_size + gap
+                bottom_margin = Inches(0.5)
+                max_top = slide_h - bottom_margin
+                avail_h = max_top - thumb_top
+                if avail_h > Inches(0.3) and resolved:
+                    cols = 2 if len(resolved) >= 2 else 1
+                    rows = (len(resolved) + cols - 1) // cols
+                    cell_w = box_size / cols
+                    cell_h = min(Inches(1.6), avail_h / max(1, rows))
+                    for idx, (img_path, alt) in enumerate(resolved):
+                        r, c = divmod(idx, cols)
+                        left = left_box + int(cell_w * c)
+                        top  = thumb_top + int(cell_h * r)
+                        pic = slide.shapes.add_picture(str(img_path), left, top)
+                        scale = min(cell_w / pic.width, cell_h / pic.height, 1.0)
+                        pic.width  = int(pic.width  * scale)
+                        pic.height = int(pic.height * scale)
+                        pic.left = left + int((cell_w - pic.width) / 2)
+                        pic.top  = top  + int((cell_h - pic.height) / 2)
+                        img_shapes.append(pic)
+                else:
+                    # compact placeholder if none resolved or no room
+                    tf = slide.shapes.add_textbox(left_box, thumb_top, box_size, Inches(0.4)).text_frame
+                    tf.text = "Image" if not resolved else " + ".join([alt or "Image" for _p, alt in resolved])
+                    _colorize_textframe(tf, FG_LIGHT)
+        
+            for shp in img_shapes:
                 try:
-                    _colorize_textframe(ph, FG_LIGHT)
+                    shp.line.width = Pt(1)
+                    shp.line.color.rgb = FG_LIGHT
                 except Exception:
                     pass
-                img_shp = None
-            else:
-                # Right-side box geometry (same as chart)
-                slide_w = prs.slide_width
-                slide_h = prs.slide_height
-                margin = Inches(0.6)
-                box_size = min(Inches(4.2), slide_h - Inches(3.0))
-                left_box = slide_w - box_size - margin
-                top_box = Inches(2.1)
-
-                # If a chart will also render, we place the image as a thumbnail below the chart
-                has_chart = bool(getattr(s, "chart", None) and s.chart and s.chart.data)
-                if not has_chart:
-                    # Main image
-                    img_shp = slide.shapes.add_picture(str(img_path), left_box, top_box)
-                    # Fit into box preserving aspect
-                    if img_shp.width > box_size or img_shp.height > box_size:
-                        scale = min(box_size / img_shp.width, box_size / img_shp.height)
-                        img_shp.width = int(img_shp.width * scale)
-                        img_shp.height = int(img_shp.height * scale)
-                    # center within the box
-                    img_shp.left = left_box + int((box_size - img_shp.width) / 2)
-                    img_shp.top  = top_box  + int((box_size - img_shp.height) / 2)
-                else:
-                    # Thumbnail below chart (compute space BEFORE inserting)
-                    thumb_w = box_size
-                    gap = Inches(0.15)
-                    thumb_top = top_box + box_size + gap
-                    bottom_margin = Inches(0.5)
-                    max_top = slide_h - bottom_margin
-                    avail_h = max_top - thumb_top
-                    if avail_h <= Inches(0.3):
-                        # Not enough room for a thumbnail; skip it gracefully
-                        img_shp = None
-                    else:
-                        thumb_h = min(Inches(1.6), avail_h)
-                        img_shp = slide.shapes.add_picture(str(img_path), left_box, thumb_top)
-                        # Scale to fit width/height while preserving aspect
-                        scale = min(thumb_w / img_shp.width, thumb_h / img_shp.height, 1.0)
-                        img_shp.width = int(img_shp.width * scale)
-                        img_shp.height = int(img_shp.height * scale)
-                        img_shp.left = left_box + int((thumb_w - img_shp.width) / 2)
-
-                # Subtle stroke to pop on dark background
-                if img_shp is not None:
-                    try:
-                        line = img_shp.line
-                        line.width = Pt(1)
-                        line.color.rgb = FG_LIGHT
-                    except Exception:
-                        pass
-
-                # Optional caption from alt text
-                if img_shp is not None:
-                    try:
-                        if s.image.alt:
-                            cap_tf = slide.shapes.add_textbox(img_shp.left, img_shp.top + img_shp.height + Pt(4),
-                                                              img_shp.width, Pt(18)).text_frame
-                            cap_tf.text = s.image.alt
-                            p0 = cap_tf.paragraphs[0]
-                            for r in p0.runs:
-                                r.font.name = KEY_FONT
-                                r.font.size = Pt(12)
-                                r.font.color.rgb = FG_LIGHT
-                    except Exception:
-                        pass
-
         # Optional chart on the right
         if getattr(s, "chart", None) and s.chart and s.chart.data:
             cdata = CategoryChartData()

@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal, Union, Dict
 
+
 class ImageSpec(BaseModel):
     path: str
     alt: Optional[str] = None
@@ -22,6 +23,7 @@ class Slide(BaseModel):
     bullets: Optional[List[str]] = None
     paragraphs: Optional[List[str]] = None
     image: Optional[ImageSpec] = None
+    images: Optional[List[ImageSpec]] = None
     table: Optional[TableSpec] = None
     notes: Optional[str] = None
     chart: Optional[ChartSpec] = None

@@ -55,11 +55,12 @@ def plan_slides(ast: List[dict]) -> SlidePlan:
         "chart_pref": None,
         "pending_subhead": None,
         "image": None,
+        "images": [],
     }
 
     def _emit_slide_from_cur():
         nonlocal slides, cur
-        if not (cur["title"] or cur["bullets"] or cur["paragraphs"] or cur["chart_points"] or cur["subtitle"] or cur["image"]):
+        if not (cur["title"] or cur["bullets"] or cur["paragraphs"] or cur["chart_points"] or cur["subtitle"] or cur["image"] or cur["images"]):
             return
         chart = None
         if cur["chart_points"]:
@@ -72,7 +73,8 @@ def plan_slides(ast: List[dict]) -> SlidePlan:
             bullets=(cur["bullets"] or None),
             paragraphs=(cur["paragraphs"] or None),
             chart=chart,
-            image=ImageSpec(**cur["image"]) if cur.get("image") else None,   # <—
+            image=ImageSpec(**cur["image"]) if cur.get("image") else None,
+            images=[ImageSpec(**d) for d in (cur.get("images") or [])] or None,
         ))
         cur.update({
             "title": None,
@@ -83,6 +85,7 @@ def plan_slides(ast: List[dict]) -> SlidePlan:
             "chart_pref": None,
             "pending_subhead": None,
             "image": None,
+            "images": [],
         })
 
     # Walk AST
@@ -170,8 +173,9 @@ def plan_slides(ast: List[dict]) -> SlidePlan:
             if not src:
                 continue
             alt = (node.get("alt") or None)
-            # Keep the image with the current slide-in-progress.
-            cur["image"] = {"path": src, "alt": alt}
+            img = {"path": src, "alt": alt}
+            cur["image"] = img                      # keep first for backwards compat
+            cur.setdefault("images", []).append(img)
 
     _emit_slide_from_cur()
     return SlidePlan(meta={"title": deck_title or "Deck"}, slides=slides)
