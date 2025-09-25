@@ -2,6 +2,7 @@ import inspect
 import json
 import typer
 from pathlib import Path
+from typing import Optional
 import sys, traceback
 
 from quip2deck.parsers.quip_html import parse_html_to_ast
@@ -12,7 +13,13 @@ from quip2deck.utils.files import default_output_path
 app = typer.Typer()
 
 @app.command()
-def convert(html_path: str, out_path: str = typer.Argument(None)):
+def convert(
+    html_path: str = typer.Argument(..., metavar="HTML_PATH"),
+    out_path: Optional[str] = typer.Argument(None, metavar="[OUT_PATH]"),
+    img_cookie: Optional[str] = typer.Option(None, "--img-cookie", help="Cookie header value used when downloading images"),
+    img_bearer: Optional[str] = typer.Option(None, "--img-bearer", help="Bearer token used for Authorization header when downloading images"),
+    img_headers: Optional[str] = typer.Option(None, "--img-headers", help="Path to a JSON file of extra HTTP headers for image downloads"),
+):
     try:
         p = Path(html_path)
         if not p.exists():
@@ -24,6 +31,34 @@ def convert(html_path: str, out_path: str = typer.Argument(None)):
         ast = parse_html_to_ast(html)
         typer.echo(f"[info] Parsed AST nodes: {len(ast)}")
         plan = plan_slides(ast)
+        # Allow renderer to resolve image paths relative to the HTML file
+        try:
+            plan.meta["base_dir"] = str(p.parent)
+        except Exception:
+            pass
+
+        # Optional HTTP headers for image downloads (private/quasi-private URLs)
+        headers = {}
+        try:
+            import os, json as _json
+            if img_headers:
+                try:
+                    hdr_path = Path(img_headers).expanduser()
+                    if hdr_path.exists():
+                        headers.update(_json.loads(hdr_path.read_text()))
+                except Exception:
+                    pass
+            # CLI cookie/bearer override env
+            cookie_val = img_cookie or os.environ.get("QUIP_IMG_COOKIE")
+            if cookie_val:
+                headers["Cookie"] = cookie_val
+            bearer_val = img_bearer or os.environ.get("QUIP_IMG_BEARER") or os.environ.get("QUIP_TOKEN")
+            if bearer_val:
+                headers["Authorization"] = f"Bearer {bearer_val}"
+            if headers:
+                plan.meta["img_headers"] = headers
+        except Exception:
+            pass
 
         # Resolve output absolutely and ensure parent exists
         raw_out = out_path or default_output_path(p.stem + ".pptx")
@@ -76,17 +111,24 @@ def proof2deck(proof_path: str, out_path: str = typer.Argument(None)):
     render_proof_pptx(proof, out)
     typer.echo(f"Wrote {out} (sections: {len(proof.get('sections', []))})")
 
-@app.callback(invoke_without_command=True)
-def main(ctx: typer.Context, html_path: str = typer.Argument(None), out_path: str = typer.Argument(None)):
-    """Convenience: allow `python -m quip2deck.cli file.html out.pptx` without `convert`."""
-    if ctx.invoked_subcommand is None:
-        if html_path is None:
-            typer.echo("Usage: convert <html_path> [out_path]")
-            raise SystemExit(2)
-        convert(html_path, out_path)  # type: ignore
+@app.callback()
+def main(ctx: typer.Context):
+    """quip2deck CLI. Use the `convert` command to render PPTX from HTML."""
+    # If users run the module without a subcommand, Typer will show help automatically.
+    # We avoid positional-argument callback patterns that can break with certain Typer/Click versions.
+    pass
 
 if __name__ == "__main__":
-    app()
+    # Support: python -m quip2deck.cli input.html [out.pptx]
+    argv = sys.argv[1:]
+    if len(argv) in (1, 2) and not argv[0].startswith("-"):
+        # Bypass Typer parsing to mimic old convenience behavior
+        html_path = argv[0]
+        out_path = argv[1] if len(argv) == 2 else None
+        convert.callback = None  # ensure Typer context not required
+        convert(html_path, out_path)  # type: ignore
+    else:
+        app()
 
 
 

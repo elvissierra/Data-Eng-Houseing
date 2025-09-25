@@ -1,5 +1,5 @@
 from typing import List, Dict, Any
-from quip2deck.models import Slide, SlidePlan, ChartSpec
+from quip2deck.models import Slide, SlidePlan, ChartSpec, ImageSpec
 import re
 
 #
@@ -54,11 +54,12 @@ def plan_slides(ast: List[dict]) -> SlidePlan:
         "chart_points": [],
         "chart_pref": None,
         "pending_subhead": None,
+        "image": None,
     }
 
     def _emit_slide_from_cur():
         nonlocal slides, cur
-        if not (cur["title"] or cur["bullets"] or cur["paragraphs"] or cur["chart_points"] or cur["subtitle"]):
+        if not (cur["title"] or cur["bullets"] or cur["paragraphs"] or cur["chart_points"] or cur["subtitle"] or cur["image"]):
             return
         chart = None
         if cur["chart_points"]:
@@ -71,6 +72,7 @@ def plan_slides(ast: List[dict]) -> SlidePlan:
             bullets=(cur["bullets"] or None),
             paragraphs=(cur["paragraphs"] or None),
             chart=chart,
+            image=ImageSpec(**cur["image"]) if cur.get("image") else None,   # <—
         ))
         cur.update({
             "title": None,
@@ -80,6 +82,7 @@ def plan_slides(ast: List[dict]) -> SlidePlan:
             "chart_points": [],
             "chart_pref": None,
             "pending_subhead": None,
+            "image": None,
         })
 
     # Walk AST
@@ -162,6 +165,13 @@ def plan_slides(ast: List[dict]) -> SlidePlan:
                     else:
                         cur["paragraphs"].append(s)
         # ignore other node types
+        elif t == "image":
+            src = (node.get("src") or "").strip()
+            if not src:
+                continue
+            alt = (node.get("alt") or None)
+            # Keep the image with the current slide-in-progress.
+            cur["image"] = {"path": src, "alt": alt}
 
     _emit_slide_from_cur()
     return SlidePlan(meta={"title": deck_title or "Deck"}, slides=slides)

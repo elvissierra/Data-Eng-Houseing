@@ -6,8 +6,14 @@ from pptx.enum.chart import XL_CHART_TYPE, XL_DATA_LABEL_POSITION, XL_LEGEND_POS
 from pptx.dml.color import RGBColor
 from quip2deck.models import SlidePlan
 from quip2deck.utils.files import ensure_parent
-
+from pathlib import Path
 from typing import List, Tuple
+import re
+import tempfile
+import base64
+import io
+from urllib.parse import urlparse
+from urllib.request import urlretrieve
 
 # --- Theme colors ---
 BG_DARK = RGBColor(0, 0, 0)
@@ -95,6 +101,91 @@ def _add_chart_index_box(slide, items: List[Tuple[str, float]], left, top, width
     return box
 
 
+def _resolve_image_path(plan: SlidePlan, src: str) -> Path | None:
+    """Return a local filesystem Path for an image src.
+    - http/https → download to temp and return the temp file path
+    - file://    → strip scheme and return local path
+    - data:uri   → decode and persist to temp, return path
+    - relative   → resolve against plan.meta["base_dir"] if present
+    - absolute   → return as-is
+    Returns None on failure.
+    """
+    try:
+        if not src:
+            return None
+        # Normalize common malformed scheme like https:/foo → https://foo
+        if src.startswith("https:/") and not src.startswith("https://"):
+            src = "https://" + src[len("https:/"):]
+        if src.startswith("http:/") and not src.startswith("http://"):
+            src = "http://" + src[len("http:/"):]
+
+        # Data URI handling
+        if src.startswith("data:"):
+            # e.g., data:image/png;base64,AAAA
+            try:
+                header, b64 = src.split(",", 1)
+                # choose extension from header if present
+                ext = ".img"
+                if ";base64" in header:
+                    med = header.split(";")[0]
+                else:
+                    med = header
+                if "/" in med:
+                    ext = "." + med.split("/")[-1]
+                tmpdir = Path(tempfile.gettempdir()) / "quip2deck_imgs"
+                tmpdir.mkdir(parents=True, exist_ok=True)
+                tmp_path = tmpdir / ("data_uri" + ext)
+                with open(tmp_path, "wb") as f:
+                    f.write(base64.b64decode(b64))
+                return tmp_path
+            except Exception:
+                return None
+
+        parsed = urlparse(src)
+        scheme = (parsed.scheme or '').lower()
+        # Remote URL → download to temp
+        if scheme in ("http", "https"):
+            tmpdir = Path(tempfile.gettempdir()) / "quip2deck_imgs"
+            tmpdir.mkdir(parents=True, exist_ok=True)
+            # create a safe filename
+            safe_name = re.sub(r"[^A-Za-z0-9_.-]", "_", (parsed.netloc + parsed.path) or "image")
+            if not safe_name:
+                safe_name = "image"
+            tmp_path = tmpdir / safe_name
+            headers = {}
+            try:
+                headers = (plan.meta or {}).get("img_headers") or {}
+            except Exception:
+                headers = {}
+            # Try requests with headers first; fallback to urlretrieve
+            try:
+                import requests  # type: ignore
+                resp = requests.get(src, headers=headers, timeout=20)
+                if resp.status_code == 200:
+                    tmp_path.write_bytes(resp.content)
+                    return tmp_path
+            except Exception:
+                pass
+            try:
+                # Fallback without headers
+                urlretrieve(src, str(tmp_path))
+                return tmp_path
+            except Exception:
+                return None
+        # file:// URL → local path
+        if scheme == "file":
+            return Path(parsed.path)
+        # No scheme → treat as filesystem path
+        p = Path(src)
+        if p.is_absolute():
+            return p
+        base_dir = (plan.meta or {}).get("base_dir") if plan else None
+        if base_dir:
+            return Path(base_dir) / p
+        return p
+    except Exception:
+        return None
+
 
 def render_pptx(plan: SlidePlan, out_path: str) -> str:
     """Minimal PPTX renderer: Title & Content layout, bullets left, chart right."""
@@ -172,6 +263,91 @@ def render_pptx(plan: SlidePlan, out_path: str) -> str:
 
         # Make sure all body text is white
         _colorize_textframe(body, FG_LIGHT)
+
+        # Optional image (placed in the right column). If no chart, image uses the chart box.
+        img_shp = None
+        if getattr(s, "image", None) and s.image and s.image.path:
+            img_path = _resolve_image_path(plan, s.image.path)
+            if img_path is None or not img_path.exists():
+                # Add a small placeholder note so the user knows an image was referenced
+                slide_w = prs.slide_width
+                slide_h = prs.slide_height
+                margin = Inches(0.6)
+                box_size = min(Inches(4.2), slide_h - Inches(3.0))
+                left_box = slide_w - box_size - margin
+                top_box = Inches(2.1)
+                ph = slide.shapes.add_textbox(left_box, top_box, box_size, Inches(0.5)).text_frame
+                ph.text = (s.image.alt or "Image") + " (not available)"
+                try:
+                    _colorize_textframe(ph, FG_LIGHT)
+                except Exception:
+                    pass
+                img_shp = None
+            else:
+                # Right-side box geometry (same as chart)
+                slide_w = prs.slide_width
+                slide_h = prs.slide_height
+                margin = Inches(0.6)
+                box_size = min(Inches(4.2), slide_h - Inches(3.0))
+                left_box = slide_w - box_size - margin
+                top_box = Inches(2.1)
+
+                # If a chart will also render, we place the image as a thumbnail below the chart
+                has_chart = bool(getattr(s, "chart", None) and s.chart and s.chart.data)
+                if not has_chart:
+                    # Main image
+                    img_shp = slide.shapes.add_picture(str(img_path), left_box, top_box)
+                    # Fit into box preserving aspect
+                    if img_shp.width > box_size or img_shp.height > box_size:
+                        scale = min(box_size / img_shp.width, box_size / img_shp.height)
+                        img_shp.width = int(img_shp.width * scale)
+                        img_shp.height = int(img_shp.height * scale)
+                    # center within the box
+                    img_shp.left = left_box + int((box_size - img_shp.width) / 2)
+                    img_shp.top  = top_box  + int((box_size - img_shp.height) / 2)
+                else:
+                    # Thumbnail below chart (compute space BEFORE inserting)
+                    thumb_w = box_size
+                    gap = Inches(0.15)
+                    thumb_top = top_box + box_size + gap
+                    bottom_margin = Inches(0.5)
+                    max_top = slide_h - bottom_margin
+                    avail_h = max_top - thumb_top
+                    if avail_h <= Inches(0.3):
+                        # Not enough room for a thumbnail; skip it gracefully
+                        img_shp = None
+                    else:
+                        thumb_h = min(Inches(1.6), avail_h)
+                        img_shp = slide.shapes.add_picture(str(img_path), left_box, thumb_top)
+                        # Scale to fit width/height while preserving aspect
+                        scale = min(thumb_w / img_shp.width, thumb_h / img_shp.height, 1.0)
+                        img_shp.width = int(img_shp.width * scale)
+                        img_shp.height = int(img_shp.height * scale)
+                        img_shp.left = left_box + int((thumb_w - img_shp.width) / 2)
+
+                # Subtle stroke to pop on dark background
+                if img_shp is not None:
+                    try:
+                        line = img_shp.line
+                        line.width = Pt(1)
+                        line.color.rgb = FG_LIGHT
+                    except Exception:
+                        pass
+
+                # Optional caption from alt text
+                if img_shp is not None:
+                    try:
+                        if s.image.alt:
+                            cap_tf = slide.shapes.add_textbox(img_shp.left, img_shp.top + img_shp.height + Pt(4),
+                                                              img_shp.width, Pt(18)).text_frame
+                            cap_tf.text = s.image.alt
+                            p0 = cap_tf.paragraphs[0]
+                            for r in p0.runs:
+                                r.font.name = KEY_FONT
+                                r.font.size = Pt(12)
+                                r.font.color.rgb = FG_LIGHT
+                    except Exception:
+                        pass
 
         # Optional chart on the right
         if getattr(s, "chart", None) and s.chart and s.chart.data:

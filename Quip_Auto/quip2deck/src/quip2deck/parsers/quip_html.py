@@ -68,16 +68,28 @@ def _walk(el) -> List[Node]:
         return nodes
 
     if name == "p":
+        # Capture text as a paragraph, but also surface any inline images
         text = el.get_text(" ", strip=True)
         if text:
             nodes.append({"type": "paragraph", "text": text})
+        for img in el.find_all("img"):
+            src = img.get("src") or ""
+            alt = img.get("alt") or None
+            nodes.append({"type": "image", "src": src, "alt": alt})
         return nodes
 
     if name in ["ul", "ol"]:
         items = []
+        images = []
         for li in el.find_all("li", recursive=False):
             items.append(li.get_text(" ", strip=True))
+            for img in li.find_all("img"):
+                src = img.get("src") or ""
+                alt = img.get("alt") or None
+                images.append({"type": "image", "src": src, "alt": alt})
         nodes.append({"type": "list", "ordered": name == "ol", "items": items})
+        # Append images found in list items after the list so they stay with this section
+        nodes.extend(images)
         return nodes
 
     if name == "img":
