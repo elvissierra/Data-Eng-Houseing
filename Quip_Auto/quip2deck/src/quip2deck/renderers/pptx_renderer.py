@@ -1,4 +1,3 @@
-
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.chart.data import CategoryChartData
@@ -354,105 +353,105 @@ def render_pptx(plan: SlidePlan, out_path: str) -> str:
                     shp.line.color.rgb = FG_LIGHT
                 except Exception:
                     pass
-        # Optional chart on the right
-        if getattr(s, "chart", None) and s.chart and s.chart.data:
-            cdata = CategoryChartData()
-            cdata.categories = [lbl for (lbl, _v) in s.chart.data]
-            cdata.add_series("", [v for (_lbl, v) in s.chart.data])
-            # right-side placement tuned to 16:9
+        # Optional charts on the right (support 1 or many)
+        if (getattr(s, "charts", None) and s.charts) or (getattr(s, "chart", None) and s.chart and s.chart.data):
+            charts_list = []
+            if getattr(s, "charts", None) and s.charts:
+                charts_list = [c for c in s.charts if c and c.data]
+            elif s.chart and s.chart.data:
+                charts_list = [s.chart]
+
             slide_w = prs.slide_width
             slide_h = prs.slide_height
             margin = Inches(S.margin)
-            chart_size = min(Inches(S.chart_box_max), slide_h - Inches(3.0))  # safe square
-            left = slide_w - chart_size - margin
-            if left < Inches(0.5):
-                # shrink chart to preserve a 0.5" left margin (prevents off-canvas after Keynote reflow)
-                overflow = Inches(0.5) - left
-                chart_size = max(Inches(3.2), chart_size - overflow)
-                left = slide_w - chart_size - margin
-                width = chart_size
-                height = chart_size
+            box_size = min(Inches(S.chart_box_max), slide_h - Inches(3.0))
+            left_box = slide_w - box_size - margin
             top = Inches(S.top_box)
-            width = chart_size
-            height = chart_size
-            ctype = XL_CHART_TYPE.COLUMN_CLUSTERED
-            if s.chart.type == "bar":
-                ctype = XL_CHART_TYPE.BAR_CLUSTERED
-            elif s.chart.type == "line":
-                ctype = XL_CHART_TYPE.LINE
-            elif s.chart.type == "pie":
-                ctype = XL_CHART_TYPE.PIE
-            chart = slide.shapes.add_chart(ctype, left, top, width, height, cdata).chart
 
-            try:
-                if s.chart.type == "pie":
-                    # Show native legend (color index) and keep percentage labels
-                    chart.has_legend = True
-                    try:
-                        pos = {
-                            "bottom": XL_LEGEND_POSITION.BOTTOM,
-                            "right": XL_LEGEND_POSITION.RIGHT,
-                            "left": XL_LEGEND_POSITION.LEFT,
-                            "top": XL_LEGEND_POSITION.TOP,
-                        }.get("bottom", XL_LEGEND_POSITION.BOTTOM)
-                        chart.legend.position = pos
-                    except Exception:
-                        pass
-                    plot = chart.plots[0]
-                    plot.has_data_labels = True
-                    d = plot.data_labels
-                    d.show_percentage = True
-                    d.number_format = "0%"
-                    try:
-                        d.position = XL_DATA_LABEL_POSITION.OUTSIDE_END
-                    except Exception:
-                        pass
-                    # White labels/legend for dark background
-                    try:
-                        d.font.color.rgb = FG_LIGHT
-                    except Exception:
-                        pass
-                    try:
-                        chart.legend.font.color.rgb = FG_LIGHT
-                    except Exception:
-                        pass
-                    # Apply settings overrides (legend on/off, position, label style)
-                    try:
+            # Layout: if more than 1 chart, place them in 2 columns inside the box
+            n = len(charts_list)
+            if n == 1:
+                layout = [(left_box, top, box_size, box_size)]
+            else:
+                cols = 2
+                rows = (n + cols - 1) // cols
+                cell_w = box_size / cols
+                cell_h = box_size / rows
+                layout = []
+                for i in range(n):
+                    r = i // cols; c = i % cols
+                    l = left_box + int(cell_w * c)
+                    t = top + int(cell_h * r)
+                    layout.append((l, t, cell_w, cell_h))
+
+            for (spec, geom) in zip(charts_list, layout):
+                l, t, cw, ch = geom
+                # keep square but fit inside cell
+                size = min(cw, ch)
+                l = l + int((cw - size) / 2)
+                t = t + int((ch - size) / 2)
+
+                cdata = CategoryChartData()
+                cdata.categories = [lbl for (lbl, _v) in spec.data]
+                cdata.add_series("", [v for (_lbl, v) in spec.data])
+                ctype = XL_CHART_TYPE.COLUMN_CLUSTERED
+                if spec.type == "bar":
+                    ctype = XL_CHART_TYPE.BAR_CLUSTERED
+                elif spec.type == "line":
+                    ctype = XL_CHART_TYPE.LINE
+                elif spec.type == "pie":
+                    ctype = XL_CHART_TYPE.PIE
+                chart = slide.shapes.add_chart(ctype, l, t, size, size, cdata).chart
+
+                try:
+                    if spec.type == "pie":
                         chart.has_legend = bool(S.pie_show_legend)
-                        pos = {
-                            "bottom": XL_LEGEND_POSITION.BOTTOM,
-                            "right": XL_LEGEND_POSITION.RIGHT,
-                            "left": XL_LEGEND_POSITION.LEFT,
-                            "top": XL_LEGEND_POSITION.TOP,
-                        }.get((S.legend_position or "bottom").lower(), XL_LEGEND_POSITION.BOTTOM)
-                        chart.legend.position = pos
-                    except Exception:
-                        pass
-                    try:
+                        try:
+                            pos = {
+                                "bottom": XL_LEGEND_POSITION.BOTTOM,
+                                "right": XL_LEGEND_POSITION.RIGHT,
+                                "left": XL_LEGEND_POSITION.LEFT,
+                                "top": XL_LEGEND_POSITION.TOP,
+                            }.get((S.legend_position or "bottom").lower(), XL_LEGEND_POSITION.BOTTOM)
+                            chart.legend.position = pos
+                        except Exception:
+                            pass
+                        plot = chart.plots[0]
+                        plot.has_data_labels = True
+                        d = plot.data_labels
                         d.show_percentage = bool(S.show_percentages)
                         if S.show_percentages:
                             d.number_format = "0%"
                         if S.pie_labels_outside:
-                            d.position = XL_DATA_LABEL_POSITION.OUTSIDE_END
-                    except Exception:
-                        pass
-                else:
-                    for series in chart.series:
-                        series.has_data_labels = True
-                        series.data_labels.show_value = True
-                        series.data_labels.font.size = Pt(12)
-                    # Axes/legend tick labels in white
-                    try:
-                        if chart.has_legend and chart.legend is not None:
-                            chart.legend.font.color.rgb = FG_LIGHT
-                        if hasattr(chart, 'category_axis') and chart.category_axis is not None:
-                            chart.category_axis.tick_labels.font.color.rgb = FG_LIGHT
-                        if hasattr(chart, 'value_axis') and chart.value_axis is not None:
-                            chart.value_axis.tick_labels.font.color.rgb = FG_LIGHT
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+                            try:
+                                d.position = XL_DATA_LABEL_POSITION.OUTSIDE_END
+                            except Exception:
+                                pass
+                        try:
+                            d.font.color.rgb = FG_LIGHT
+                            if chart.has_legend and chart.legend:
+                                chart.legend.font.color.rgb = FG_LIGHT
+                        except Exception:
+                            pass
+                    else:
+                        for series in chart.series:
+                            series.has_data_labels = True
+                            series.data_labels.show_value = True
+                            series.data_labels.font.size = Pt(12)
+                        try:
+                            if chart.has_legend and chart.legend is not None:
+                                chart.legend.font.color.rgb = FG_LIGHT
+                            if hasattr(chart, 'category_axis') and chart.category_axis is not None:
+                                chart.category_axis.tick_labels.font.color.rgb = FG_LIGHT
+                            if hasattr(chart, 'value_axis') and chart.value_axis is not None:
+                                chart.value_axis.tick_labels.font.color.rgb = FG_LIGHT
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+            # skip the old single-chart block since we handled charts above
+            continue
 
 
 

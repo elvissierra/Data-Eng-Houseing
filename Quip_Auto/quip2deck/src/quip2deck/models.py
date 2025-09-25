@@ -25,6 +25,7 @@ class Slide(BaseModel):
     table: Optional[TableSpec] = None
     notes: Optional[str] = None
     chart: Optional[ChartSpec] = None
+    charts: Optional[List[ChartSpec]] = None
 
 class SlidePlan(BaseModel):
     meta: Dict[str, str] = Field(default_factory=dict)

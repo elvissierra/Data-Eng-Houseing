@@ -20,6 +20,7 @@ _TOTAL_SAMPLE = re.compile(r"^\s*total\s+sample\s*:\s*(\d+)\s*$", re.IGNORECASE)
 # User-selectable chart preference
 _CHART_PREF = re.compile(r"^\s*(?:\[chart=(bar|pie|line|column)\]|:::\s*chart\s*=\s*(bar|pie|line|column)|\((bar|pie|line|column)\))\s*$", re.IGNORECASE)
 _CHART_MAP = {"bar":"bar","pie":"pie","line":"line","column":"column"}
+_SPLIT_FLAG = re.compile(r"^\s*(?:\[split\]|:::\s*split\s*=\s*(?:yes|true|1))\s*$", re.IGNORECASE)
 
 _SUBHEAD = re.compile(r"^[A-Za-z0-9].{0,40}$")  # short label used as subhead like 'Ticket source'
 
@@ -56,6 +57,8 @@ def plan_slides(ast: List[dict]) -> SlidePlan:
         "pending_subhead": None,
         "image": None,
         "images": [],
+        "chart_split": False,
+        "chart_groups": {},  # name -> list[(label, value)]
     }
 
     def _emit_slide_from_cur():
@@ -63,9 +66,28 @@ def plan_slides(ast: List[dict]) -> SlidePlan:
         if not (cur["title"] or cur["bullets"] or cur["paragraphs"] or cur["chart_points"] or cur["subtitle"] or cur["image"] or cur["images"]):
             return
         chart = None
-        if cur["chart_points"]:
-            ctype = cur["chart_pref"] if cur["chart_pref"] in ("bar","pie","line","column") else ("pie" if 2 <= len(cur["chart_points"]) <= 6 else "bar")
-            chart = ChartSpec(type=ctype, data=cur["chart_points"])
+        charts = None
+        # Build grouped charts if requested
+        if cur["chart_groups"]:
+            if cur.get("chart_split") or len(cur["chart_groups"]) > 1:
+                charts = []
+                for gname, points in cur["chart_groups"].items():
+                    if not points:
+                        continue
+                    ctype = cur["chart_pref"] if cur["chart_pref"] in ("bar","pie","line","column") else ("pie" if 2 <= len(points) <= 6 else "bar")
+                    charts.append(ChartSpec(type=ctype, data=points))
+            else:
+                # fall back to single merged chart
+                merged = []
+                for pts in cur["chart_groups"].values():
+                    merged.extend(pts)
+                if merged:
+                    ctype = cur["chart_pref"] if cur["chart_pref"] in ("bar","pie","line","column") else ("pie" if 2 <= len(merged) <= 6 else "bar")
+                    chart = ChartSpec(type=ctype, data=merged)
+        elif cur["chart_points"]:
+            pts = cur["chart_points"]
+            ctype = cur["chart_pref"] if cur["chart_pref"] in ("bar","pie","line","column") else ("pie" if 2 <= len(pts) <= 6 else "bar")
+            chart = ChartSpec(type=ctype, data=pts)
         slides.append(Slide(
             layout="content",
             title=cur["title"],
@@ -73,6 +95,7 @@ def plan_slides(ast: List[dict]) -> SlidePlan:
             bullets=(cur["bullets"] or None),
             paragraphs=(cur["paragraphs"] or None),
             chart=chart,
+            charts=charts,
             image=ImageSpec(**cur["image"]) if cur.get("image") else None,
             images=[ImageSpec(**d) for d in (cur.get("images") or [])] or None,
         ))
@@ -86,6 +109,8 @@ def plan_slides(ast: List[dict]) -> SlidePlan:
             "pending_subhead": None,
             "image": None,
             "images": [],
+            "chart_split": False,
+            "chart_groups": {},
         })
 
     # Walk AST
@@ -113,9 +138,16 @@ def plan_slides(ast: List[dict]) -> SlidePlan:
                     chosen = next(g for g in pref.groups() if g)
                     cur["chart_pref"] = _CHART_MAP.get(chosen.lower())
                     continue
+                # Split flag to render multiple charts on same slide
+                if _SPLIT_FLAG.match(s):
+                    cur["chart_split"] = True
+                    continue
                 # Numeric?
                 kvn = _kv_numeric(s)
                 if kvn:
+                    # Route to a named group if a subhead is pending; else default group "Group 1"
+                    gname = cur.get("pending_subhead") or "Group 1"
+                    cur.setdefault("chart_groups", {}).setdefault(gname, []).append(kvn)
                     cur["chart_points"].append(kvn)
                     val = kvn[1]; bullet_val = int(val) if float(val).is_integer() else val
                     cur["bullets"].append(f"{kvn[0]}: {bullet_val}")
@@ -150,9 +182,14 @@ def plan_slides(ast: List[dict]) -> SlidePlan:
                     chosen = next(g for g in pref.groups() if g)
                     cur["chart_pref"] = _CHART_MAP.get(chosen.lower())
                     continue
+                if _SPLIT_FLAG.match(s):
+                    cur["chart_split"] = True
+                    continue
                 # Numeric KV → chart
                 kvn = _kv_numeric(s)
                 if kvn:
+                    gname = cur.get("pending_subhead") or "Group 1"
+                    cur.setdefault("chart_groups", {}).setdefault(gname, []).append(kvn)
                     cur["chart_points"].append(kvn)
                     val = kvn[1]; bullet_val = int(val) if float(val).is_integer() else val
                     cur["bullets"].append(f"{kvn[0]}: {bullet_val}")
