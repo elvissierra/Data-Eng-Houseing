@@ -64,7 +64,7 @@ python -m quip2deck.cli \
   out/mydeck.pptx
   # run in terminal
   #python3 -m quip2deck.cli convert examples/sample_quipx.html out/apollox.pptx \
-  #  --img-bearer 'VWNEOU1BWGVSblI=|1790354983|pUyurqv4CwUzS3IdsGXeMfQfUu6HGPZD0ou5Q9MCITQ='
+  #  --img-bearer 'TOKEN'
 ```
 
 **API endpoint equivalents:**
