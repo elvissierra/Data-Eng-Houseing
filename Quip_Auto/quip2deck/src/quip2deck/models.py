@@ -10,8 +10,6 @@ class TableSpec(BaseModel):
     rows: List[List[str]]
 
 
-# ChartSpec for numeric key-value pairs
-from typing import Literal
 class ChartSpec(BaseModel):
     type: Literal["bar", "column", "line", "pie"] = "bar"
     data: List[tuple[str, float]]  # (label, value)

@@ -6,12 +6,12 @@ from pptx.enum.chart import XL_CHART_TYPE, XL_DATA_LABEL_POSITION, XL_LEGEND_POS
 from pptx.dml.color import RGBColor
 from quip2deck.models import SlidePlan
 from quip2deck.utils.files import ensure_parent
+from quip2deck.settings import RendererSettings
 from pathlib import Path
 from typing import List, Tuple
 import re
 import tempfile
 import base64
-import io
 from urllib.parse import urlparse
 from urllib.request import urlretrieve
 
@@ -190,10 +190,22 @@ def _resolve_image_path(plan: SlidePlan, src: str) -> Path | None:
 def render_pptx(plan: SlidePlan, out_path: str) -> str:
     """Minimal PPTX renderer: Title & Content layout, bullets left, chart right."""
     ensure_parent(out_path)
+    # Load renderer settings (overrides may come from plan.meta["settings_override"])
+    S = RendererSettings.from_meta(getattr(plan, "meta", None))
+    # Rebind global-style constants so helper functions use the theme dynamically
+    global BG_DARK, FG_LIGHT, KEY_FONT, TITLE_SIZE_TITLE, TITLE_SIZE_CONTENT, SUBTITLE_SIZE, BODY_SIZE, SUB_BULLET_SIZE
+    BG_DARK = RGBColor(*S.bg_rgb)
+    FG_LIGHT = RGBColor(*S.fg_rgb)
+    KEY_FONT = S.font_name
+    TITLE_SIZE_TITLE = Pt(S.title_title_pt)
+    TITLE_SIZE_CONTENT = Pt(S.title_content_pt)
+    SUBTITLE_SIZE = Pt(S.subtitle_pt)
+    BODY_SIZE = Pt(S.body_pt)
+    SUB_BULLET_SIZE = Pt(S.sub_bullet_pt)
     prs = Presentation()
-    # Normalize to 16:9 so charts aren’t off-canvas in Keynote
-    prs.slide_width = Inches(13.333)
-    prs.slide_height = Inches(7.5)
+    # Use configured slide geometry (defaults preserve 16:9)
+    prs.slide_width = Inches(S.slide_width)
+    prs.slide_height = Inches(S.slide_height)
 
     for s in plan.slides:
         if s.layout == "title":
@@ -277,14 +289,15 @@ def render_pptx(plan: SlidePlan, out_path: str) -> str:
                     resolved.append((pth, im.alt or ""))
                 else:
                     missing.append(im.alt or "Image")
-        
-            slide_w = prs.slide_width; slide_h = prs.slide_height
-            margin = Inches(0.6)
-            box_size = min(Inches(4.2), slide_h - Inches(3.0))
+
+            slide_w = prs.slide_width
+            slide_h = prs.slide_height
+            margin = Inches(S.margin)
+            box_size = min(Inches(S.chart_box_max), slide_h - Inches(3.0))
             left_box = slide_w - box_size - margin
-            top_box  = Inches(2.1)
+            top_box  = Inches(S.top_box)
             has_chart = bool(getattr(s, "chart", None) and s.chart and s.chart.data)
-        
+
             if not has_chart:
                 if not resolved:
                     tf = slide.shapes.add_textbox(left_box, top_box, box_size, Inches(0.6)).text_frame
@@ -308,16 +321,16 @@ def render_pptx(plan: SlidePlan, out_path: str) -> str:
                         pic.top  = top  + int((cell_h - pic.height) / 2)
                         img_shapes.append(pic)
             else:
-                gap = Inches(0.15)
+                gap = Inches(S.gap)
                 thumb_top = top_box + box_size + gap
-                bottom_margin = Inches(0.5)
+                bottom_margin = Inches(S.bottom_margin)
                 max_top = slide_h - bottom_margin
                 avail_h = max_top - thumb_top
                 if avail_h > Inches(0.3) and resolved:
                     cols = 2 if len(resolved) >= 2 else 1
                     rows = (len(resolved) + cols - 1) // cols
                     cell_w = box_size / cols
-                    cell_h = min(Inches(1.6), avail_h / max(1, rows))
+                    cell_h = min(Inches(S.thumb_max_h), avail_h / max(1, rows))
                     for idx, (img_path, alt) in enumerate(resolved):
                         r, c = divmod(idx, cols)
                         left = left_box + int(cell_w * c)
@@ -334,7 +347,7 @@ def render_pptx(plan: SlidePlan, out_path: str) -> str:
                     tf = slide.shapes.add_textbox(left_box, thumb_top, box_size, Inches(0.4)).text_frame
                     tf.text = "Image" if not resolved else " + ".join([alt or "Image" for _p, alt in resolved])
                     _colorize_textframe(tf, FG_LIGHT)
-        
+
             for shp in img_shapes:
                 try:
                     shp.line.width = Pt(1)
@@ -349,8 +362,8 @@ def render_pptx(plan: SlidePlan, out_path: str) -> str:
             # right-side placement tuned to 16:9
             slide_w = prs.slide_width
             slide_h = prs.slide_height
-            margin = Inches(0.6)
-            chart_size = min(Inches(4.2), slide_h - Inches(3.0))  # safe square
+            margin = Inches(S.margin)
+            chart_size = min(Inches(S.chart_box_max), slide_h - Inches(3.0))  # safe square
             left = slide_w - chart_size - margin
             if left < Inches(0.5):
                 # shrink chart to preserve a 0.5" left margin (prevents off-canvas after Keynote reflow)
@@ -359,7 +372,7 @@ def render_pptx(plan: SlidePlan, out_path: str) -> str:
                 left = slide_w - chart_size - margin
                 width = chart_size
                 height = chart_size
-            top = Inches(2.1)
+            top = Inches(S.top_box)
             width = chart_size
             height = chart_size
             ctype = XL_CHART_TYPE.COLUMN_CLUSTERED
@@ -376,7 +389,13 @@ def render_pptx(plan: SlidePlan, out_path: str) -> str:
                     # Show native legend (color index) and keep percentage labels
                     chart.has_legend = True
                     try:
-                        chart.legend.position = XL_LEGEND_POSITION.BOTTOM
+                        pos = {
+                            "bottom": XL_LEGEND_POSITION.BOTTOM,
+                            "right": XL_LEGEND_POSITION.RIGHT,
+                            "left": XL_LEGEND_POSITION.LEFT,
+                            "top": XL_LEGEND_POSITION.TOP,
+                        }.get("bottom", XL_LEGEND_POSITION.BOTTOM)
+                        chart.legend.position = pos
                     except Exception:
                         pass
                     plot = chart.plots[0]
@@ -395,6 +414,26 @@ def render_pptx(plan: SlidePlan, out_path: str) -> str:
                         pass
                     try:
                         chart.legend.font.color.rgb = FG_LIGHT
+                    except Exception:
+                        pass
+                    # Apply settings overrides (legend on/off, position, label style)
+                    try:
+                        chart.has_legend = bool(S.pie_show_legend)
+                        pos = {
+                            "bottom": XL_LEGEND_POSITION.BOTTOM,
+                            "right": XL_LEGEND_POSITION.RIGHT,
+                            "left": XL_LEGEND_POSITION.LEFT,
+                            "top": XL_LEGEND_POSITION.TOP,
+                        }.get((S.legend_position or "bottom").lower(), XL_LEGEND_POSITION.BOTTOM)
+                        chart.legend.position = pos
+                    except Exception:
+                        pass
+                    try:
+                        d.show_percentage = bool(S.show_percentages)
+                        if S.show_percentages:
+                            d.number_format = "0%"
+                        if S.pie_labels_outside:
+                            d.position = XL_DATA_LABEL_POSITION.OUTSIDE_END
                     except Exception:
                         pass
                 else:

@@ -19,6 +19,7 @@ def convert(
     img_cookie: Optional[str] = typer.Option(None, "--img-cookie", help="Cookie header value used when downloading images"),
     img_bearer: Optional[str] = typer.Option(None, "--img-bearer", help="Bearer token used for Authorization header when downloading images"),
     img_headers: Optional[str] = typer.Option(None, "--img-headers", help="Path to a JSON file of extra HTTP headers for image downloads"),
+    config: Optional[str] = typer.Option(None, "--config", help="Path to JSON with renderer overrides (see RendererSettings)"),
 ):
     try:
         p = Path(html_path)
@@ -36,6 +37,15 @@ def convert(
             plan.meta["base_dir"] = str(p.parent)
         except Exception:
             pass
+
+        # Optional renderer overrides from JSON config
+        if config:
+            try:
+                cfg_path = Path(config).expanduser()
+                if cfg_path.exists():
+                    plan.meta["settings_override"] = json.loads(cfg_path.read_text())
+            except Exception:
+                pass
 
         # Optional HTTP headers for image downloads (private/quasi-private URLs)
         headers = {}
