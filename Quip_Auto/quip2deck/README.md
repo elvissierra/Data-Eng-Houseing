@@ -10,12 +10,15 @@ For cross-platform portability, this starter renders **.pptx** via `python-pptx`
 ## Features (MVP)
 - Parse a Quip-exported (or Quip-like) HTML file
 - Simple slide planning: H1/H2 start a new slide; paragraphs and lists become body content
+- Supports **multiple charts per slide** via `[split]` flag or subheads
+- Handles grouped images and image grids dynamically (auto-arranges images below or instead of charts)
 - Creates `.pptx` with a title slide + content slides
 - FastAPI: `POST /convert` accepts HTML and returns a `.pptx` artifact on disk
+- Settings can be customized via `settings.py` or a config JSON file
 
 ## Roadmap
 - Quip API connector (OAuth/Token) (stubbed)
-- Two-column/media/table layouts
+- Advanced chart layouts, multiple slide themes, richer table support
 - Speaker notes from callouts/comments
 - Theming packs
 - macOS Keynote Agent for native `.key` rendering (provided as a stub file)
@@ -80,6 +83,9 @@ POST `/convert` with a JSON body containing one of the following:
 - First heading becomes the deck title (Title slide)
 - Subsequent sections become "Title & Content" slides
 - `<p>` becomes paragraph lines; `<ul>/<ol>` become bullets
+- `[chart=bar|pie|line|column]` controls chart type for a chart or chart group
+- `[split]` flag or multiple subheads in lists/paragraphs create **multiple charts on one slide**
+- Multiple `<img>` images in a section are grouped into a grid, placed below or instead of charts dynamically
 
 ---
 
@@ -93,8 +99,8 @@ src/quip2deck/
   models.py             # Pydantic models for SlidePlan, requests
   connectors/quip.py    # (stub) Quip API connector
   parsers/quip_html.py  # HTML → AST nodes
-  planner/outline.py    # AST → SlidePlan
-  theming/theme.py      # Theme dataclass (MVP, constants)
+  planner/outline.py    # AST → SlidePlan (supports chart grouping and splitting)
+  settings.py           # Renderer and layout settings (customizable)
   renderers/pptx_renderer.py   # PPTX writer
   renderers/keynote_agent.py   # (stub) client to macOS agent
   utils/files.py        # paths, temp dirs
@@ -110,5 +116,7 @@ requirements.txt
 
 ## Notes
 - This is a **starter**—kept intentionally minimal and readable.
+- The system is **reusable and dynamic**: no hard-coded sizes, layouts, or image/chart positions; all are configurable via `settings.py` or config overrides.
+- Images, charts, and bullets are resolved and arranged dynamically based on content.
 - Extend the parser/planner to support callouts, images, tables, charts, notes, and layout hints like `:::slide`.
 - For Keynote-native output, create a macOS agent that receives the SlidePlan JSON and uses AppleScript/JXA to create a `.key`. This repo includes a stub only.
