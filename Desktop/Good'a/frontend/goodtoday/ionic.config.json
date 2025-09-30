@@ -1,7 +1,0 @@
-{
-  "name": "goodtoday",
-  "integrations": {
-    "capacitor": {}
-  },
-  "type": "vue"
-}
