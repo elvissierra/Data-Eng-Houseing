@@ -8,6 +8,7 @@ from quip2deck.utils.files import ensure_parent
 from quip2deck.settings import RendererSettings
 from pathlib import Path
 from typing import List, Tuple
+from quip2deck.utils.files import ensure_parent, _repo_root_from_utils
 import re
 import tempfile
 import base64
@@ -56,9 +57,26 @@ def _apply_font_paragraph(p, size):
 
 
 # --- Dark theme background and text helpers ---
-def _apply_dark_background(slide):
+def _apply_background(slide, plan: SlidePlan, S: RendererSettings):
     try:
         fill = slide.background.fill
+        if getattr(S, "bg_image_path", None):
+            # Resolve absolute, base_dir-relative, or repo-root-relative
+            p = Path(S.bg_image_path)
+            if not p.is_absolute():
+                base_dir = (getattr(plan, "meta", {}) or {}).get("base_dir")
+                if base_dir:
+                    p = Path(base_dir) / p
+                else:
+                    p = _repo_root_from_utils() / p
+            if p.exists():
+                try:
+                    fill.user_picture(str(p))
+                    return
+                except Exception:
+                    # Fall back to solid on any failure
+                    pass
+        # Solid fallback (dark)
         fill.solid()
         fill.fore_color.rgb = BG_DARK
     except Exception:
@@ -209,7 +227,7 @@ def render_pptx(plan: SlidePlan, out_path: str) -> str:
     for s in plan.slides:
         if s.layout == "title":
             slide = prs.slides.add_slide(prs.slide_layouts[0])
-            _apply_dark_background(slide)
+            _apply_background(slide, plan, S)
             if slide.shapes.title:
                 slide.shapes.title.text = s.title or plan.meta.get("title", "Deck")
                 # slightly larger title
@@ -228,7 +246,7 @@ def render_pptx(plan: SlidePlan, out_path: str) -> str:
 
         # Content slide
         slide = prs.slides.add_slide(prs.slide_layouts[1])  # Title & Content
-        _apply_dark_background(slide)
+        _apply_background(slide, plan, S)
         if slide.shapes.title:
             slide.shapes.title.text = s.title or ""
             try:

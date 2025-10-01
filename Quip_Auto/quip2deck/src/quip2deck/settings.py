@@ -18,6 +18,9 @@ class RendererSettings:
     fg_rgb: Tuple[int, int, int] = (255, 255, 255)
     font_name: str = "Helvetica Neue"
 
+    # Background
+    bg_image_path: str | None = None
+
     # Font sizes (points)
     title_title_pt: int = 56
     title_content_pt: int = 48

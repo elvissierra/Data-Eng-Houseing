@@ -1,0 +1,6 @@
+{
+  "bg_image_path": "imgs/gradient_black.png",
+  "bg_rgb": [0, 0, 0],
+  "fg_rgb": [255, 255, 255],
+  "font_name": "Helvetica Neue"
+}
