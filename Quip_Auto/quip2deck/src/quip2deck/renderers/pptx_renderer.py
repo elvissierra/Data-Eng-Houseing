@@ -4,7 +4,6 @@ from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE, XL_DATA_LABEL_POSITION, XL_LEGEND_POSITION
 from pptx.dml.color import RGBColor
 from quip2deck.models import SlidePlan
-from quip2deck.utils.files import ensure_parent
 from quip2deck.settings import RendererSettings
 from pathlib import Path
 from typing import List, Tuple
@@ -61,21 +60,23 @@ def _apply_background(slide, plan: SlidePlan, S: RendererSettings):
     try:
         fill = slide.background.fill
         if getattr(S, "bg_image_path", None):
-            # Resolve absolute, base_dir-relative, or repo-root-relative
-            p = Path(S.bg_image_path)
-            if not p.is_absolute():
+            p_cfg = Path(S.bg_image_path)
+            candidates = []
+            if p_cfg.is_absolute():
+                candidates.append(p_cfg)
+            else:
                 base_dir = (getattr(plan, "meta", {}) or {}).get("base_dir")
                 if base_dir:
-                    p = Path(base_dir) / p
-                else:
-                    p = _repo_root_from_utils() / p
-            if p.exists():
-                try:
-                    fill.user_picture(str(p))
-                    return
-                except Exception:
-                    # Fall back to solid on any failure
-                    pass
+                    candidates.append(Path(base_dir) / p_cfg)
+                # Always also try repo root
+                candidates.append(_repo_root_from_utils() / p_cfg)
+            for cand in candidates:
+                if cand.exists():
+                    try:
+                        fill.user_picture(str(cand))
+                        return
+                    except Exception:
+                        continue
         # Solid fallback (dark)
         fill.solid()
         fill.fore_color.rgb = BG_DARK
@@ -313,7 +314,10 @@ def render_pptx(plan: SlidePlan, out_path: str) -> str:
             box_size = min(Inches(S.chart_box_max), slide_h - Inches(3.0))
             left_box = slide_w - box_size - margin
             top_box  = Inches(S.top_box)
-            has_chart = bool(getattr(s, "chart", None) and s.chart and s.chart.data)
+            has_chart = bool(
+                (getattr(s, "chart", None) and s.chart and s.chart.data)
+                or (getattr(s, "charts", None) and s.charts)
+            )
 
             if not has_chart:
                 if not resolved:
