@@ -9,6 +9,10 @@ from quip2deck.parsers.quip_html import parse_html_to_ast
 from quip2deck.planner.outline import plan_slides
 from quip2deck.renderers.pptx_renderer import render_pptx
 from quip2deck.utils.files import default_output_path
+from pptx import Presentation
+from pptx.util import Inches, Pt
+
+
 
 app = typer.Typer()
 
