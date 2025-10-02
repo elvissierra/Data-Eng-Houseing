@@ -27,8 +27,9 @@ class Slide(BaseModel):
     chart: Optional[ChartSpec] = None
     charts: Optional[List[ChartSpec]] = None
 
+from typing import Any
 class SlidePlan(BaseModel):
-    meta: Dict[str, str] = Field(default_factory=dict)
+    meta: Dict[str, Any] = Field(default_factory=dict)
     slides: List[Slide]
 
 class ConvertRequest(BaseModel):

@@ -57,8 +57,17 @@ def _apply_font_paragraph(p, size):
 
 # --- Dark theme background and text helpers ---
 def _apply_background(slide, plan: SlidePlan, S: RendererSettings):
+    """
+    Apply background to a slide.
+    Priority:
+      1) If settings.bg_image_path is provided, use that image.
+      2) Otherwise, synthesize a Keynote-esque advanced gradient: black→dark-gray→black, vertical (90°).
+      3) Fallback to solid dark if anything fails.
+    """
     try:
         fill = slide.background.fill
+
+        # 1) Use explicit background image, resolving against base_dir and repo root.
         if getattr(S, "bg_image_path", None):
             p_cfg = Path(S.bg_image_path)
             candidates = []
@@ -68,7 +77,6 @@ def _apply_background(slide, plan: SlidePlan, S: RendererSettings):
                 base_dir = (getattr(plan, "meta", {}) or {}).get("base_dir")
                 if base_dir:
                     candidates.append(Path(base_dir) / p_cfg)
-                # Always also try repo root
                 candidates.append(_repo_root_from_utils() / p_cfg)
             for cand in candidates:
                 if cand.exists():
@@ -77,11 +85,67 @@ def _apply_background(slide, plan: SlidePlan, S: RendererSettings):
                         return
                     except Exception:
                         continue
-        # Solid fallback (dark)
+
+        # 2) Synthesize a vertical gradient image (Advanced Gradient look) and apply.
+        try:
+            from PIL import Image
+            # Render at slide resolution (approx 96dpi)
+            w_px = max(8, int(S.slide_width * 96))
+            h_px = max(8, int(S.slide_height * 96))
+
+            # Gradient stops: (position 0..1, (R,G,B))
+            # Matches the Keynote panel you showed: black → dark gray → black, angle 90°
+            stops = [
+                (0.00, (0, 0, 0)),       # black
+                (0.58, (34, 34, 34)),    # dark gray midpoint (#222)
+                (1.00, (0, 0, 0)),       # black
+            ]
+
+            img = Image.new("RGB", (w_px, h_px), (0, 0, 0))
+
+            def lerp(a, b, t):
+                return int(a + (b - a) * t)
+
+            # vertical gradient (top→bottom)
+            for y in range(h_px):
+                pos = y / (h_px - 1) if h_px > 1 else 0.0
+                # find the bracketing stops
+                left_idx = 0
+                for i in range(len(stops) - 1):
+                    if stops[i][0] <= pos <= stops[i + 1][0]:
+                        left_idx = i
+                        break
+                p0, c0 = stops[left_idx]
+                p1, c1 = stops[left_idx + 1]
+                seg_t = 0.0 if (p1 - p0) == 0 else (pos - p0) / (p1 - p0)
+                r = lerp(c0[0], c1[0], seg_t)
+                g = lerp(c0[1], c1[1], seg_t)
+                b = lerp(c0[2], c1[2], seg_t)
+                # fill row
+                for x in range(w_px):
+                    img.putpixel((x, y), (r, g, b))
+
+            # save to temp and apply
+            tmpdir = Path(tempfile.gettempdir()) / "quip2deck_bgs"
+            tmpdir.mkdir(parents=True, exist_ok=True)
+            bg_png = tmpdir / f"gradient_{w_px}x{h_px}.png"
+            img.save(bg_png, format="PNG")
+
+            fill.user_picture(str(bg_png))
+            return
+        except Exception:
+            # Pillow missing or any failure -> fall through to solid
+            pass
+
+        # 3) Fallback: solid dark
         fill.solid()
         fill.fore_color.rgb = BG_DARK
     except Exception:
-        pass
+        try:
+            slide.background.fill.solid()
+            slide.background.fill.fore_color.rgb = BG_DARK
+        except Exception:
+            pass
 
 
 def _colorize_textframe(tf, rgb):

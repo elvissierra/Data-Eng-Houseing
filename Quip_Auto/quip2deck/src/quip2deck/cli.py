@@ -5,11 +5,30 @@ from pathlib import Path
 from typing import Optional
 import sys, traceback
 
+# --- .env loading and env support ---
+import os
+# Optional: load environment variables from a .env file if python-dotenv is installed
+try:
+    from dotenv import load_dotenv  # type: ignore
+    # Load .env from current working directory first (does not override existing env)
+    load_dotenv(override=False)
+    # Also try repo-root/.env (one level above src/quip2deck/...)
+    try:
+        from pathlib import Path as _P
+        _repo_root_env = _P(__file__).resolve().parents[3] / ".env"
+        if _repo_root_env.exists():
+            load_dotenv(dotenv_path=_repo_root_env, override=False)
+    except Exception:
+        pass
+except Exception:
+    pass
+
 from quip2deck.parsers.quip_html import parse_html_to_ast
 from quip2deck.planner.outline import plan_slides
 from quip2deck.renderers.pptx_renderer import render_pptx
 from quip2deck.utils.files import default_output_path
 from pptx import Presentation
+from quip2deck.utils.files import ensure_parent
 from pptx.util import Inches, Pt
 
 
@@ -42,35 +61,59 @@ def convert(
         except Exception:
             pass
 
-        # Optional renderer overrides from JSON config
-        if config:
-            try:
+        # Optional renderer overrides from JSON config (CLI wins over env)
+        try:
+            cfg_path = None
+            if config:
                 cfg_path = Path(config).expanduser()
-                if cfg_path.exists():
-                    plan.meta["settings_override"] = json.loads(cfg_path.read_text())
-            except Exception:
-                pass
+            else:
+                env_cfg = os.environ.get("QUIP_CONFIG")
+                if env_cfg:
+                    cfg_path = Path(env_cfg).expanduser()
+            if cfg_path and cfg_path.exists():
+                plan.meta["settings_override"] = json.loads(cfg_path.read_text())
+            # Allow a simple env override for just the background image
+            env_bg = os.environ.get("QUIP_BG_IMAGE")
+            if env_bg:
+                so = plan.meta.get("settings_override") or {}
+                so["bg_image_path"] = env_bg
+                plan.meta["settings_override"] = so
+        except Exception:
+            pass
 
         # Optional HTTP headers for image downloads (private/quasi-private URLs)
         headers = {}
         try:
-            import os, json as _json
-            if img_headers:
+            import json as _json
+            # Merge headers from a JSON file if provided via CLI or env (.env)
+            hdr_json = img_headers or os.environ.get("QUIP_IMG_HEADERS")
+            if hdr_json:
                 try:
-                    hdr_path = Path(img_headers).expanduser()
+                    hdr_path = Path(hdr_json).expanduser()
                     if hdr_path.exists():
                         headers.update(_json.loads(hdr_path.read_text()))
                 except Exception:
                     pass
-            # CLI cookie/bearer override env
+            # Cookie/Bearer/Referer from CLI or env
             cookie_val = img_cookie or os.environ.get("QUIP_IMG_COOKIE")
             if cookie_val:
                 headers["Cookie"] = cookie_val
             bearer_val = img_bearer or os.environ.get("QUIP_IMG_BEARER") or os.environ.get("QUIP_TOKEN")
             if bearer_val:
                 headers["Authorization"] = f"Bearer {bearer_val}"
+            referer_val = os.environ.get("QUIP_IMG_REFERER")
+            if referer_val:
+                headers["Referer"] = referer_val
             if headers:
                 plan.meta["img_headers"] = headers
+        except Exception:
+            pass
+
+        # Optionally print debug header keys when QUIP_VERBOSE=1 to help users verify .env usage
+        try:
+            if os.environ.get("QUIP_VERBOSE"):
+                hdr_keys = ", ".join(sorted((plan.meta.get("img_headers") or {}).keys()))
+                typer.echo(f"[debug] headers set: {hdr_keys or 'none'}")
         except Exception:
             pass
 
