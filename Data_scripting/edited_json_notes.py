@@ -3,19 +3,20 @@ edited_json_notes.py  (aka BC_rca_notes_only.py)
 
 GOAL:
     A focused utility that ONLY collects the "notes" text from the JSON page
-    behind an **edited Hours** badge in the Versions view.
+    behind an **edited Show In Client** badge in the Versions view.
 
 WHEN TO USE:
     - Your main pipeline already gets present/edited badges + ToDos, but
       you now need the **RCA notes** (the "notes" field in the JSON edit details)
-      for the **Hours** contested field only.
-    - This script intentionally ignores non-Hours rows to keep it simple & fast.
+      for the **Show In Client (SIC)** contested field.
+    - This script intentionally ignores non-SIC rows to keep it simple & fast.
 
 INPUT / OUTPUT:
     - Reads Place IDs from:  Data_scripting/BC_Hours_and_Closures_Edit_Contests.csv
       (expects a "Place ID" column and optionally "Contested Field"/"Contested Field Column")
     - Writes: rca_notes_output.csv with columns:
         * place_id
+        * place_name
         * rca_note
 
 ASSUMPTIONS:
@@ -24,22 +25,28 @@ ASSUMPTIONS:
         PATH, TIMEOUT, THRESHOLD
 
 IMPORTANT:
-    - This script ONLY runs for rows where the contested field is 'Hours'
-      (i.e., filter key = hours_period). Non-Hours rows are skipped.
-
-Tip:
-    - If you ever want a variant for "Show In Client", duplicate this file and
-      change the strict Hours-only checks to target the SIC row and `presence_period`.
+    - This script defaults to **Show In Client (SIC)** but can run for **Hours** by passing --mode hours.
+      Internally it maps to the filter keys `presence_period` (SIC) and `hours_period` (Hours).
 """
 
 import csv
 import re
 import html
+import time
+import sys
 from datetime import datetime
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
+
+# ---- Mode configuration
+# Default mode is "sic"; pass --mode hours to scrape Hours instead
+MODE = "sic"  # "hours" | "sic"
+MODE_CONFIG = {
+    "hours": {"filter_key": "hours_period", "panel_label": "Hours"},
+    "sic": {"filter_key": "presence_period", "panel_label": "Show In Client"},
+}
 
 # Reuse your existing helpers & constants from the main hours/closures script.
 # This keeps browser setup and DOM conventions in a single place.
@@ -55,8 +62,8 @@ from BC_hours_and_closures_Edit_Contests import (
 )
 
 # ---- I/O paths for this focused utility
-INPUT_CSV = "Data_scripting/BC_Hours_and_Closures_Edit_Contests.csv"
-OUTPUT_CSV = "rca_notes_output.csv"
+INPUT_CSV = "2_BC_Hours_and_Closures_Edit_Contests.csv"
+OUTPUT_CSV = "2_BC_output.csv"
 
 
 def _wait_versions_ready(driver):
@@ -71,15 +78,78 @@ def _wait_versions_ready(driver):
     )
 
 
+def _wait_name_ready(driver):
+    """Wait for the Name row (preferred) or fallback to Hours as page-ready signal."""
+    try:
+        WebDriverWait(driver, TIMEOUT).until(
+            EC.presence_of_element_located((By.XPATH, "//div[@title='Name']"))
+        )
+    except TimeoutException:
+        try:
+            WebDriverWait(driver, TIMEOUT).until(
+                EC.presence_of_element_located((By.XPATH, "//div[@title='Hours']"))
+            )
+        except TimeoutException:
+            pass
+
+
+def _get_place_name(driver) -> str:
+    """Best-effort extraction of the POI's display name.
+
+    Priority order:
+      1) Details row value next to the label div[@title='Name']
+      2) Common header/title fallbacks
+    """
+    try:
+        # Canonical value cell(s) after the Name label
+        value_containers = driver.find_elements(By.XPATH, "//div[@title='Name']/following-sibling::div")
+        if value_containers:
+            spans = value_containers[0].find_elements(By.XPATH, ".//span[normalize-space()]")
+            if spans:
+                txt = spans[0].text.strip()
+                if txt:
+                    return txt
+            raw = value_containers[0].text.strip()
+            if raw:
+                return raw
+        # Header/title heuristics
+        for sel in (
+            "[data-test-id='place-header__title']",
+            "[data-test-id='place__title']",
+            "[data-test-id='place-title']",
+        ):
+            els = driver.find_elements(By.CSS_SELECTOR, sel)
+            if els and els[0].text.strip():
+                return els[0].text.strip()
+        for xp in (
+            "//header//h1",
+            "//header//h2",
+            "//div[contains(@class,'place-header')]//h1",
+            "//div[contains(@class,'place-header')]//h2",
+        ):
+            els = driver.find_elements(By.XPATH, xp)
+            for e in els:
+                t = e.text.strip()
+                if t:
+                    return t
+        for h in driver.find_elements(By.TAG_NAME, "h1"):
+            t = h.text.strip()
+            if t:
+                return t
+    except Exception:
+        pass
+    return ""
+
+
 def _open_json_from_panel(driver, title_text: str) -> bool:
     """
     STRICT panel opener:
-      - Find the field panel by @title (e.g., 'Hours')
+      - Find the field panel by @title (e.g., 'Show In Client')
       - Ensure its badge text explicitly starts with 'edited'
       - Click the link wrapping the badge (opens JSON details)
     Returns True if navigation happened (new tab or same tab), else False.
 
-    NOTE: We **only** call this with title_text='Hours' in this script.
+    NOTE: We **only** call this with title_text='Show In Client' in this script.
     """
     # Locate the label cell (left) and the value/badge panel (right)
     try:
@@ -248,38 +318,43 @@ def _scrape_notes_from_json(driver) -> str:
     return best
 
 
-def scrape_rca_note_for_place(driver, place_id: str, contested_field: str = "Hours"):
+def scrape_rca_note_for_place(driver, place_id: str, contested_field: str = "Show In Client"):
     """
-    Single-POI flow (STRICTLY for Hours):
+    Single-POI flow (STRICTLY for Show In Client):
         1) Load details page
         2) Click 'Versions'
-        3) Filter = hours_period
+        3) Filter = presence_period
         4) Pick latest version strictly prior to THRESHOLD (fallback earliest)
-        5) Click the 'edited' link in the Hours row
+        5) Click the 'edited' link in the Show In Client row
         6) Read and return the 'notes' value from the JSON
 
     Returns:
         dict | None:
             {"place_id": <id>, "rca_note": <text>}  when processed
-            None                                    when skipped (not Hours)
+            None                                    when skipped (not SIC)
     """
     # Guard: we only run for Hours
-    if (contested_field or "").strip().lower() != "hours":
-        return None
+    #if (contested_field or "").strip().lower() != "hours":
+    #    return None
 
     # Details
     driver.get(PATH + place_id)
     _wait_versions_ready(driver)
 
-    # Versions → filter by Hours
+    # Ensure Name is present and capture it before leaving the details view
+    _wait_name_ready(driver)
+    place_name = _get_place_name(driver)
+
+    # Versions → apply filter based on mode
     click_versions_tab(driver)
-    key = "hours_period"
+    cfg = MODE_CONFIG.get(MODE, MODE_CONFIG["hours"])
+    key = cfg["filter_key"]
     choose_field(driver, key)  # If this fails, we continue; versions may still be relevant
 
     # Collect versions, pick one before threshold (else earliest)
     versions = collect_versions(driver)
     if not versions:
-        return {"place_id": place_id, "rca_note": ""}
+        return {"place_id": place_id, "place_name": place_name, "rca_note": ""}
 
     chosen = None
     for dt, vid in versions:
@@ -291,19 +366,26 @@ def scrape_rca_note_for_place(driver, place_id: str, contested_field: str = "Hou
     _, vid = chosen
     click_version(driver, vid)
 
-    # Strict: only click the edited badge in Hours row
-    if not _open_json_from_panel(driver, "Hours"):
-        return {"place_id": place_id, "rca_note": ""}
+    # Strict: only click the edited badge in the selected field row
+    panel_label = cfg["panel_label"]
+    if not _open_json_from_panel(driver, panel_label):
+        return {"place_id": place_id, "place_name": place_name, "rca_note": ""}
 
     note = _scrape_notes_from_json(driver)
-    return {"place_id": place_id, "rca_note": note}
+    return {"place_id": place_id, "place_name": place_name, "rca_note": note}
 
 
 if __name__ == "__main__":
+    # Optional: select field mode from CLI ("hours" or "sic")
+    for i, arg in enumerate(list(sys.argv)):
+        if arg == "--mode" and len(sys.argv) > i + 1:
+            val = (sys.argv[i + 1] or "").strip().lower()
+            if val in MODE_CONFIG:
+                MODE = val
     driver = start_driver()
 
     with open(OUTPUT_CSV, "w", newline="", encoding="utf-8") as out_f:
-        writer = csv.DictWriter(out_f, fieldnames=["place_id", "rca_note"])
+        writer = csv.DictWriter(out_f, fieldnames=["place_id", "place_name", "rca_note"])
         writer.writeheader()
 
         with open(INPUT_CSV, newline="", encoding="utf-8") as in_f:
@@ -312,7 +394,7 @@ if __name__ == "__main__":
             reader.fieldnames = [fn.lstrip("\ufeff").strip() for fn in reader.fieldnames]
             for row in reader:
                 # ---- Robust Place ID cleanup (handles "<br>" and HTML entities)
-                pid_raw = (row.get("Place ID", "") or "").strip()
+                pid_raw = (row.get("Place Id", "") or "").strip()
                 pid_unescaped = html.unescape(pid_raw)               # "&lt;br&gt;123" → "<br>123"
                 pid_no_tags = re.sub(r"<[^>]*>", "", pid_unescaped)  # "<br>123" → "123"
                 m = re.search(r"\d+", pid_no_tags)
@@ -322,14 +404,14 @@ if __name__ == "__main__":
                     continue
 
                 # Use the sheet value if present; we only act on "Hours".
-                contested_field = (row.get("Contested Field", "") or row.get("Contested Field Column", "") or "").strip()
-                if contested_field.lower() != "hours":
-                    print(f"↷ Skipping {pid}: contested_field is '{contested_field}' (not Hours)")
-                    continue
+                #contested_field = (row.get("Contested Field", "") or row.get("Contested Field Column", "") or "").strip()
+                #if contested_field.lower() != "hours":
+                #    print(f"↷ Skipping {pid}: contested_field is '{contested_field}' (not Hours)")
+                #    continue
 
                 # Process one POI
                 try:
-                    rec = scrape_rca_note_for_place(driver, pid, contested_field=contested_field)
+                    rec = scrape_rca_note_for_place(driver, pid)
                 except Exception as e:
                     print(f"❌ Error for {pid}: {e}")
                     rec = None
@@ -343,4 +425,3 @@ if __name__ == "__main__":
 
     driver.quit()
     print("✅ Done.")
-
