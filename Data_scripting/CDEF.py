@@ -22,6 +22,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import html
+from urllib.parse import urlparse
 
 # ---- Console colors for easy scanning in Terminal output
 RED = "\033[91m"    # errors
@@ -82,14 +83,45 @@ def ensure_gemini_open(driver):
 
 def _panel_after_title(driver, title_text: str):
     """
-    Given a section title div[@title='<title_text>'], return its trailing panel node.
-    Returns None if not found.
+    Locate the value panel that corresponds to a Gemini row label.
+    Supports two DOM patterns:
+      1) <div title="Label">...</div><div class="col-value">...</div>
+      2) <div class="col-label"><div class="col-label__label">Label</div>...</div>
+         <div class="col-value">...</div>
+    Returns the 'col-value' div WebElement, or None if not found.
     """
+    # Pattern 1: title attribute on the label container
     try:
-        label = WebDriverWait(driver, 5).until(
+        label = WebDriverWait(driver, 2).until(
             EC.presence_of_element_located((By.XPATH, f"//div[@title='{title_text}']"))
         )
-        return label.find_element(By.XPATH, "following-sibling::div")
+        return label.find_element(By.XPATH, "following-sibling::div[contains(@class,'col-value')]")
+    except Exception:
+        pass
+    # Pattern 2: label text inside .col-label__label block
+    try:
+        label2 = WebDriverWait(driver, 2).until(
+            EC.presence_of_element_located((
+                By.XPATH,
+                "//div[contains(@class,'col-label__label') and normalize-space()=$t]",
+            )),
+        )
+    except Exception:
+        label2 = None
+    if label2 is None:
+        # Retry with string substitution since Selenium does not support XPATH variables
+        try:
+            label2 = WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((
+                    By.XPATH,
+                    f"//div[contains(@class,'col-label__label') and normalize-space()='{title_text}']"
+                ))
+            )
+        except Exception:
+            return None
+    try:
+        col_label = label2.find_element(By.XPATH, "ancestor::div[contains(@class,'col-label')]")
+        return col_label.find_element(By.XPATH, "following-sibling::div[contains(@class,'col-value')]")
     except Exception:
         return None
 
@@ -150,8 +182,19 @@ def scrape_urls(driver) -> str:
     try:
         for a in panel.find_elements(By.TAG_NAME, "a"):
             href = (a.get_attribute("href") or "").strip()
-            if href:
-                hrefs.append(href)
+            if not href:
+                continue
+            # Only accept http(s) URLs
+            if not (href.startswith("http://") or href.startswith("https://")):
+                continue
+            # Exclude Apollo or other Apple internal links
+            try:
+                netloc = urlparse(href).netloc.lower()
+            except Exception:
+                netloc = ""
+            if "apollo.geo.apple.com" in netloc or netloc.endswith(".apple.com"):
+                continue
+            hrefs.append(href)
     except Exception:
         pass
     # De-duplicate while preserving order
@@ -165,47 +208,68 @@ def scrape_urls(driver) -> str:
 
 def scrape_vendor_contributions(driver) -> str:
     """
-    Extract the Gemini 'Vendor Contributions' table as a compact JSON string.
-    Each row becomes {name, vendor, internal_id, score, partners} where available.
+    Extract vendor names from the Gemini 'Vendor Contributions' table and return
+    a comma-separated string, e.g., "Localeze, Yelp, Facebook".
     """
-    panel = _panel_after_title(driver, "Vendor Contributions")
-    if not panel:
-        return ""
-    rows = []
+    # Locate vendor cells by anchoring on the visible "Vendor Contributions" label,
+    # then walking to its sibling value column and into the table body.
+    vendors = []
     try:
-        table = panel.find_element(By.CSS_SELECTOR, "table")
-        # Identify column order from headers
-        headers = [th.text.strip().lower() for th in table.find_elements(By.CSS_SELECTOR, "thead th")]
-        body_tr = table.find_elements(By.CSS_SELECTOR, "tbody tr")
-        for tr in body_tr:
-            cells = [td.text.strip() for td in tr.find_elements(By.CSS_SELECTOR, "td")]
-            if not cells:
-                continue
-            row = {}
-            for idx, key in enumerate(headers):
-                val = cells[idx] if idx < len(cells) else ""
-                row[key] = val
-            # Normalize a few expected keys
-            norm = {
-                "name": row.get("name", ""),
-                "vendor": row.get("vendor", ""),
-                "internal_id": row.get("vendor internal id", "") or row.get("internal id", ""),
-                "score": row.get("score", ""),
-                "partners": row.get("partners", ""),
-            }
-            rows.append(norm)
-    except Exception:
-        # If the table shape changes, at least return any visible text block
+        # Ensure Gemini is visible enough
         try:
-            txt = panel.text.strip()
-            return json.dumps({"raw": " ".join(txt.split())})
+            driver.execute_script("window.scrollBy(0, -200);")
+        except Exception:
+            pass
+        # Wait for any Vendor Contributions label to appear
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((
+                By.XPATH,
+                "//div[contains(@class,'col-label__label') and normalize-space()='Vendor Contributions']"
+            ))
+        )
+        # Collect all second-td cells under any Vendor Contributions section
+        xpath_cells = (
+            "//div[contains(@class,'col-label__label') and normalize-space()='Vendor Contributions']"
+            "/ancestor::div[contains(@class,'row-details') or contains(@class,'row-details-separated-when-compact')]"
+            "/div[contains(@class,'col-value')]"
+            "//table[contains(@class,'vendor-contributions-table')]//tbody//tr/td[2]"
+        )
+        cells = driver.find_elements(By.XPATH, xpath_cells)
+        if not cells:
+            # Fallback: accept any table under that value node
+            xpath_cells = (
+                "//div[contains(@class,'col-label__label') and normalize-space()='Vendor Contributions']"
+                "/ancestor::div[contains(@class,'row-details') or contains(@class,'row-details-separated-when-compact')]"
+                "/div[contains(@class,'col-value')]"
+                "//table//tbody//tr/td[2]"
+            )
+            cells = driver.find_elements(By.XPATH, xpath_cells)
+        for td in cells:
+            txt = (td.get_attribute('innerText') or td.text or '').strip()
+            txt = ' '.join(txt.replace('\u00a0', ' ').split())
+            if txt:
+                vendors.append(txt)
+    except Exception:
+        # Last resort: query any vendor-contributions table in document
+        try:
+            cells = driver.find_elements(By.XPATH, "//table[contains(@class,'vendor-contributions-table')]//tbody//tr/td[2]")
+            for td in cells:
+                txt = (td.get_attribute('innerText') or td.text or '').strip()
+                txt = ' '.join(txt.replace('\u00a0', ' ').split())
+                if txt:
+                    vendors.append(txt)
         except Exception:
             return ""
-    try:
-        return json.dumps(rows, ensure_ascii=False)
-    except Exception:
-        # Fallback serialization
-        return str(rows)
+
+    # De-duplicate while preserving order
+    seen = set()
+    ordered = []
+    for v in vendors:
+        if v and v not in seen:
+            ordered.append(v)
+            seen.add(v)
+
+    return ", ".join(ordered)
 
 # ---------------- Orchestrator for scraping Gemini ----------------
 def scrape_gemini(place_id: str, driver) -> dict:
